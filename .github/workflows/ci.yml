@@ -39,4 +39,4 @@ jobs:
         with:
           coverage-file: coverage/coverage-final.json
           github-token: ${{ secrets.GITHUB_TOKEN }}  # เพิ่มบรรทัดนี้
-          skip-step: true
+          skip-step: all
