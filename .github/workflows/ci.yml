@@ -34,5 +34,5 @@ jobs:
       - name: Jest coverage report
         uses: ArtiomTr/jest-coverage-report-action@v2.0.6
         with:
-          coverage-file: ./coverage/jest-report.json
-          base-coverage-file: ./coverage/jest-report.json
+          coverage-file: ./coverage/coverage-summary.json
+          base-coverage-file: ./coverage/coverage-summary.json
