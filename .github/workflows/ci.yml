@@ -32,10 +32,10 @@ jobs:
         run: yarn lint
 
       - name: Unit & Integration tests
-        run: yarn test:ci
+        run: yarn test:ci --coverage
 
       - name: Jest coverage report
         uses: ArtiomTr/jest-coverage-report-action@v2.0.6
         with:
           coverage-file: ./coverage/coverage-final.json
-          base-coverage-file: ./coverage/coverage-final.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}  # เพิ่มบรรทัดนี้
