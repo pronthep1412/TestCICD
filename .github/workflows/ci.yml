@@ -39,14 +39,3 @@ jobs:
         with:
           coverage-file: ./coverage/coverage-final.json
           github-token: ${{ secrets.GITHUB_TOKEN }}  # เพิ่มบรรทัดนี้
-          skip-step: all  # ข้ามขั้นตอนติดตั้งและทดสอบเนื่องจากได้ทำไปแล้ว
-          annotations: none  # ปิดการใช้งาน annotations เพื่อหลีกเลี่ยงปัญหา
-          threshold: 0  # กำหนดค่า threshold เป็น 0 เพื่อให้ผ่านไปก่อน
-
-
-      - name: Check coverage file structure
-        run: |
-          echo "Coverage file exists:"
-          ls -la ./coverage/
-          echo "Coverage file content sample:"
-          head -n 20 ./coverage/coverage-final.json
