@@ -34,9 +34,20 @@ jobs:
       - name: Unit & Integration tests
         run: yarn test:ci
 
+      - name: Run Tests with Coverage
+        run: |
+          npx jest --coverage --coverageReporters=json-summary --coverageReporters=json
+          # ตรวจสอบว่าไฟล์ coverage มีโครงสร้างที่ถูกต้อง
+          if [ -f "./coverage/coverage-final.json" ]; then
+            echo "Coverage file created successfully"
+          else
+            echo "Coverage file not created correctly"
+            exit 1
+          fi
+
       - name: Jest coverage report
         uses: ArtiomTr/jest-coverage-report-action@v2.0.6
         with:
           coverage-file: ./coverage/coverage-final.json
           github-token: ${{ secrets.GITHUB_TOKEN }}  # เพิ่มบรรทัดนี้
-          base-coverage-file: ""
+          skip-step: all
