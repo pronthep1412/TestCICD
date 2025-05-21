@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: 20.19.1
           cache: "yarn"
+      
+      - name: Check Yarn version
+        run: yarn --version
 
       - name: Install Node modules
         run: yarn ci
