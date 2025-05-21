@@ -76,7 +76,7 @@ function App(): React.JSX.Element {
     <View style={backgroundStyle}>
       <StatusBar
         barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
+             backgroundColor={backgroundStyle.backgroundColor}
       />
       <ScrollView
         style={backgroundStyle}>
