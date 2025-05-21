@@ -39,7 +39,7 @@ jobs:
         with:
           coverage-file: ./coverage/coverage-final.json
           github-token: ${{ secrets.GITHUB_TOKEN }}  # เพิ่มบรรทัดนี้
-          skip-step: install,test  # ข้ามขั้นตอนติดตั้งและทดสอบเนื่องจากได้ทำไปแล้ว
+          skip-step: all  # ข้ามขั้นตอนติดตั้งและทดสอบเนื่องจากได้ทำไปแล้ว
           annotations: none  # ปิดการใช้งาน annotations เพื่อหลีกเลี่ยงปัญหา
           threshold: 0  # กำหนดค่า threshold เป็น 0 เพื่อให้ผ่านไปก่อน
 
