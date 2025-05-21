@@ -3,11 +3,11 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "ci": "yarn install",
-    "test:ci": "jest --coverage --coverageReporters=json-summary --outputFile=jest-report.json",
+    "preci": "rm -fr node_modules",
+    "ci": "yarn install --frozen-lockfile",
     "android": "react-native run-android",
     "ios": "react-native run-ios",
-    "lint": "eslint .",
+    "lint": "eslint src --ext .js,.jsx,.ts,.tsx --fix",
     "start": "react-native start",
     "test": "jest",
     "prepare": "husky"
