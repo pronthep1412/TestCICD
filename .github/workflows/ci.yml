@@ -24,6 +24,9 @@ jobs:
         
       - name: Enable Corepack (Yarn 3+)
         run: corepack enable
+
+      - name: Set Yarn version to 3.6.4
+        run: yarn set version 3.6.4
       
       - name: Check Yarn version
         run: yarn --version
