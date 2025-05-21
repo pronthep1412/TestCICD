@@ -61,6 +61,7 @@ function App(): React.JSX.Element {
   // test.js
   const a = [1, 2, 3];
   console.log(a);
+  console.log(a);
   const backgroundStyle = {
     backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
   };
