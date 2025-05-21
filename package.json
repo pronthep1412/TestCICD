@@ -10,7 +10,8 @@
     "lint": "eslint src --ext .js,.jsx,.ts,.tsx --fix",
     "start": "react-native start",
     "test": "jest",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:ci": "jest --ci --coverage --coverageReporters=json"
   },
   "dependencies": {
     "react": "19.0.0",
