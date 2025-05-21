@@ -1,5 +1,9 @@
 // .eslintrc.js
 module.exports = {
+  env: {
+    node: true, // เพิ่มตรงนี้
+    es2021: true, // เพิ่มถ้าต้องการใช้ ES2021 features
+  },
   parser: '@typescript-eslint/parser', // ถ้าใช้ TypeScript
   extends: [
     'eslint:recommended',
