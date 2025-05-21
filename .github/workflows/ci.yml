@@ -22,8 +22,8 @@ jobs:
           node-version: 20.19.1
           cache: "yarn"
         
-      - name: Install Yarn 3.6.4
-        run: npm install -g yarn@3.6.4
+      - name: Enable Corepack (Yarn 3+)
+        run: corepack enable
       
       - name: Check Yarn version
         run: yarn --version
