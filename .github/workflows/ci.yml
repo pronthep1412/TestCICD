@@ -35,7 +35,7 @@ jobs:
         run: yarn test:ci
 
       - name: Jest coverage report
-        uses: ArtiomTr/jest-coverage-report-action@v2.0.6
+        uses: ArtiomTr/jest-coverage-report-action@v2.0.5
         with:
           coverage-file: ./coverage/coverage-final.json
           github-token: ${{ secrets.GITHUB_TOKEN }}  # เพิ่มบรรทัดนี้
