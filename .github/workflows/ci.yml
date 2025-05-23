@@ -34,10 +34,11 @@ jobs:
       - name: Unit & Integration tests
         run: yarn test:ci
 
+      - name: List coverage folder
+        run: ls -l coverage
+
       - name: Jest coverage report
         uses: ArtiomTr/jest-coverage-report-action@v2.2.1
         with:
           coverage-file: ./coverage/coverage-final.json
-          github-token: ${{ secrets.GITHUB_TOKEN }}  # เพิ่มบรรทัดนี้
-          package-manager: yarn
-          test-script: yarn test:ci
+          github-token: ${{ secrets.GITHUB_TOKEN }}
