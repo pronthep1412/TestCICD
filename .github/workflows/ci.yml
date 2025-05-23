@@ -39,13 +39,10 @@ jobs:
       - name: Unit & Integration tests
         run: yarn test:ci
 
-      - name: List coverage folder
-        run: ls -l coverage
-
-      - name: Jest coverage report
-        uses: ArtiomTr/jest-coverage-report-action@v2.2.1
-        with:
-          coverage-file: ./coverage/coverage-final.json
-          base-coverage-file: ''
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          skip-step: all
+      # - name: Jest coverage report
+      #   uses: ArtiomTr/jest-coverage-report-action@v2.2.1
+      #   with:
+      #     coverage-file: ./coverage/coverage-final.json
+      #     base-coverage-file: ''
+      #     github-token: ${{ secrets.GITHUB_TOKEN }}
+      #     skip-step: all
