@@ -6,6 +6,11 @@ on:
       - "master"
       - "develop"
       - "preprod"
+  push:
+    branches:
+      - master
+      - develop
+      - preprod
 
 jobs:
   #First job
@@ -14,13 +19,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Use Node.js 14
+      - name: Use Node.js 20
         uses: actions/setup-node@v3
         with:
-          node-version: 14
+          node-version: 22.15.1
           cache: "yarn"
+      
+      - name: Check Yarn version
+        run: yarn --version
 
       - name: Install Node modules
         run: yarn ci
@@ -32,7 +40,9 @@ jobs:
         run: yarn test:ci
 
       - name: Jest coverage report
-        uses: ArtiomTr/jest-coverage-report-action@v2.0.6
+        uses: ArtiomTr/jest-coverage-report-action@v2.2.1
         with:
-          coverage-file: ./jest-report.json
-          base-coverage-file: ./jest-report.json
+          coverage-file: ./coverage/coverage-final.json
+          base-coverage-file: ./coverage/coverage-final.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          skip-step: all
