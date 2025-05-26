@@ -13,7 +13,7 @@ on:
       - preprod
 
 jobs:
-  #First job
+  # First Job: Node.js Testing
   install-and-test:
     runs-on: ubuntu-latest
 
@@ -46,3 +46,11 @@ jobs:
       #     base-coverage-file: ./coverage/coverage-final.json
       #     github-token: ${{ secrets.GITHUB_TOKEN }}
       #     skip-step: all
+
+  # Second Job: iOS Build
+  build-ios:
+    needs: install-and-test
+    uses: ./.github/workflows/ios-build.yml
+    with:
+      environment: release
+    secrets: inherit
