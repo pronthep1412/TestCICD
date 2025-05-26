@@ -21,7 +21,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node.js 20
+      - name: Use Node.js 22
         uses: actions/setup-node@v3
         with:
           node-version: 22.15.1
@@ -39,10 +39,10 @@ jobs:
       - name: Unit & Integration tests
         run: yarn test:ci
 
-      - name: Jest coverage report
-        uses: ArtiomTr/jest-coverage-report-action@v2.2.1
-        with:
-          coverage-file: ./coverage/coverage-final.json
-          base-coverage-file: ./coverage/coverage-final.json
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          skip-step: all
+      # - name: Jest coverage report
+      #   uses: ArtiomTr/jest-coverage-report-action@v2.2.1
+      #   with:
+      #     coverage-file: ./coverage/coverage-final.json
+      #     base-coverage-file: ./coverage/coverage-final.json
+      #     github-token: ${{ secrets.GITHUB_TOKEN }}
+      #     skip-step: all
