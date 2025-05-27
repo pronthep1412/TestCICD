@@ -1,0 +1,28 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Build and export ipa"
+  lane :export_ipa do
+    # ปลดล็อก keychain ที่เก็บ certificate
+    unlock_keychain(
+      path: ENV['KEYCHAIN_PATH'] || "~/Library/Keychains/login.keychain-db",
+      password: ENV['KEYCHAIN_PASSWORD'] || "temp123"
+    )
+
+    # อัปเดตการตั้งค่า code signing 
+    # *** แก้ไข: เปลี่ยนจาก path: เป็ project_path: ***
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      project_path: ENV['PROJECT_PATH'] || "FinderUK.xcodeproj"
+    )
+
+    # รัน build app
+    build_app(
+      scheme: ENV['SCHEME'] || "FinderUK",
+      workspace: ENV['WORKSPACE_PATH'] || "FinderUK.xcworkspace",
+      export_method: ENV['EXPORT_METHOD'] || "app-store",
+      output_directory: "./build",
+      output_name: "FinderUK.ipa"
+    )
+  end
+end
