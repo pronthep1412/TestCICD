@@ -72,7 +72,7 @@ jobs:
           output-path: "FinderUK.ipa"
 
       - name: Upload build
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v3.1.2
         with:
           name: "FinderUK.ipa"
           path: "FinderUK.ipa"
