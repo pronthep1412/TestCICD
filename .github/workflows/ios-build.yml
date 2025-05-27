@@ -39,10 +39,10 @@ jobs:
       - name: Install Node modules
         run: yarn ci
 
-      - name: Setup Ruby
+      - name: Setup Ruby (bundle)
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 3.0
+          ruby-version: 2.6
           bundler-cache: true
 
       - name: Restore Pods cache
@@ -59,51 +59,20 @@ jobs:
       - name: Install pod dependencies
         run: cd ios && pod install && cd ..
 
-      # Setup certificates และ provisioning profile
-      - name: Setup certificates and provisioning profile
-        run: |
-          # Create certificates directory
-          mkdir -p ~/certificates
-          
-          # Decode and save p12 certificate
-          echo "${{ secrets.P12_BASE64 }}" | base64 --decode > ~/certificates/certificate.p12
-          
-          # Decode and save provisioning profile
-          echo "${{ secrets.MOBILEPROVISION_BASE64 }}" | base64 --decode > ~/certificates/profile.mobileprovision
-          
-          # Install provisioning profile
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp ~/certificates/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
-
-      # Create keychain and import certificate
-      - name: Create keychain and import certificate
-        run: |
-          # Create keychain
-          security create-keychain -p "temp123" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "temp123" build.keychain
-          security set-keychain-settings -t 3600 -u build.keychain
-          
-          # Import certificate
-          security import ~/certificates/certificate.p12 -k build.keychain -P "${{ secrets.CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k "temp123" build.keychain
-
-      # ใช้ maierj/fastlane-action
-      - name: Build with Fastlane
-        uses: maierj/fastlane-action@v3.1.0
+      - name: Build iOS (Release)
+        uses: yukiarrr/ios-build-action@v1.5.0
         with:
-          lane: 'export_ipa'
-          subdirectory: 'ios'
-        env:
-          PROJECT_PATH: FinderUK.xcodeproj
-          WORKSPACE_PATH: FinderUK.xcworkspace
-          SCHEME: FinderUK
-          EXPORT_METHOD: app-store
-          KEYCHAIN_PATH: ~/Library/Keychains/build.keychain
-          KEYCHAIN_PASSWORD: temp123
+          project-path: ios/FinderUK.xcodeproj
+          p12-base64: ${{ secrets.P12_BASE64 }}
+          mobileprovision-base64: ${{ secrets.MOBILEPROVISION_BASE64 }}
+          code-signing-identity: "Apple Distribution"
+          certificate-password: ${{ secrets.CERTIFICATE_PASSWORD }}
+          team-id: ${{ secrets.IOS_TEAM_ID }}
+          workspace-path: ios/FinderUK.xcworkspace
+          output-path: "FinderUK.ipa"
 
-      - name: Upload build artifact
+      - name: Upload build
         uses: actions/upload-artifact@v4
         with:
           name: "FinderUK.ipa"
-          path: "ios/build/FinderUK.ipa"
+          path: "FinderUK.ipa"
