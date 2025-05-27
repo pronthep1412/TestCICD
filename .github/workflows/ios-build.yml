@@ -60,15 +60,15 @@ jobs:
         run: cd ios && pod install && cd ..
 
       - name: Build iOS (Release)
-        uses: yukiarrr/ios-build-action@v1.5.0
+        uses: yukiarrr/ios-build-action@v1.12.0
         with:
-          project-path: ios/FinderUK.xcodeproj
+          project-path: Unity-iPhone.xcodeproj
           p12-base64: ${{ secrets.P12_BASE64 }}
           mobileprovision-base64: ${{ secrets.MOBILEPROVISION_BASE64 }}
           code-signing-identity: "Apple Distribution"
           certificate-password: ${{ secrets.CERTIFICATE_PASSWORD }}
           team-id: ${{ secrets.IOS_TEAM_ID }}
-          workspace-path: ios/FinderUK.xcworkspace
+          workspace-path: Unity-iPhone.xcworkspace
           output-path: "FinderUK.ipa"
           export-method: app-store
           configuration: Release
