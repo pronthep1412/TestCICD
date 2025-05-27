@@ -11,10 +11,10 @@ platform :ios do
 
     # อัปเดตการตั้งค่า code signing (ถ้าจำเป็น)
     # แก้ไข: ใช้ project_path แทน path
-    update_code_signing_settings(
-      use_automatic_signing: false,
-      project_path: ENV['PROJECT_PATH'] || "ios/FinderUK.xcodeproj"
-    )
+    # update_code_signing_settings(
+    #   use_automatic_signing: false,
+    #   project_path: ENV['PROJECT_PATH'] || "ios/FinderUK.xcodeproj"
+    # )
 
     # รัน build app (ปรับ scheme/workspace ตามโปรเจกต์คุณ)
     build_app(
