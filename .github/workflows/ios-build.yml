@@ -30,6 +30,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install or update fastlane
+        run: sudo gem install fastlane --no-document
+
       - name: Use Node.js 22
         uses: actions/setup-node@v3
         with:
