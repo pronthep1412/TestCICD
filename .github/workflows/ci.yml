@@ -37,9 +37,7 @@ jobs:
         run: yarn lint
 
       - name: Unit & Integration tests
-        run: ls /Applications | grep Xcode
-
-      
+        run: yarn test:ci
 
       # - name: Jest coverage report
       #   uses: ArtiomTr/jest-coverage-report-action@v2.2.1
@@ -58,9 +56,9 @@ jobs:
   #   secrets: inherit
 
   # Third Job
-  # build-ios:
-  #   needs: install-and-test
-  #   uses: ./.github/workflows/ios-build.yml
-  #   with:
-  #     environment: release
-  #   secrets: inherit
+  build-ios:
+    needs: install-and-test
+    uses: ./.github/workflows/ios-build.yml
+    with:
+      environment: release
+    secrets: inherit
