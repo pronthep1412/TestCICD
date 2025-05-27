@@ -70,6 +70,8 @@ jobs:
           team-id: ${{ secrets.IOS_TEAM_ID }}
           workspace-path: ios/FinderUK.xcworkspace
           output-path: "FinderUK.ipa"
+          export-method: app-store
+          configuration: Release
 
       - name: Upload build
         uses: actions/upload-artifact@v4
