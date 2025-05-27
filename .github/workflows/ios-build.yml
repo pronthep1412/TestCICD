@@ -26,7 +26,7 @@ on:
 
 jobs:
   build-ios:
-    runs-on: ${{matrix.os}}-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
