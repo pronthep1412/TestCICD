@@ -48,17 +48,17 @@ jobs:
       #     skip-step: all
 
   # Second Job
-  build-android:
-    needs: install-and-test
-    uses: ./.github/workflows/android-build.yml
-    with:
-      environment: release
-    secrets: inherit
-
-  # Third Job
-  # build-ios:
+  # build-android:
   #   needs: install-and-test
-  #   uses: ./.github/workflows/ios-build.yml
+  #   uses: ./.github/workflows/android-build.yml
   #   with:
   #     environment: release
   #   secrets: inherit
+
+  # Third Job
+  build-ios:
+    needs: install-and-test
+    uses: ./.github/workflows/ios-build.yml
+    with:
+      environment: release
+    secrets: inherit
