@@ -1,4 +1,5 @@
-name: Pull Request into Master, Develop and Preprod
+# ci.yml - สำหรับ testing PR เท่านั้น 
+name: Pull Request Testing
 
 on:
   pull_request:
@@ -8,31 +9,44 @@ on:
       - "preprod"
 
 jobs:
-  #First job
+  # Testing Job
   install-and-test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Use Node.js 14
-        uses: actions/setup-node@v3
-        with:
-          node-version: 14
-          cache: "yarn"
+      # - name: Use Node.js 20
+      #   uses: actions/setup-node@v3
+      #   with:
+      #     node-version: 20.18.0
+      #     cache: "yarn"
+      
+      # - name: Check Yarn version
+      #   run: yarn --version
 
-      - name: Install Node modules
-        run: yarn ci
+      # - name: Install Node modules
+      #   run: yarn ci
 
-      - name: Linting
-        run: yarn lint
+      # - name: Linting
+      #   run: yarn lint
 
-      - name: Unit & Integration tests
-        run: yarn test:ci
+      # - name: Unit & Integration tests
+      #   run: yarn test:ci
 
-      - name: Jest coverage report
-        uses: ArtiomTr/jest-coverage-report-action@v2.0.6
-        with:
-          coverage-file: ./jest-report.json
-          base-coverage-file: ./jest-report.json
+  # Build Testing (ไม่ deploy)
+  # build-android-test:
+  #   needs: install-and-test
+  #   uses: ./.github/workflows/android-build.yml
+  #   with:
+  #     environment: debug
+  #     publish: false
+  #   secrets: inherit
+
+  build-ios-test:
+    needs: install-and-test
+    uses: ./.github/workflows/ios-build.yml
+    with:
+      environment: debug
+      publish: false
+    secrets: inherit

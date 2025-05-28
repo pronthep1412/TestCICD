@@ -1,0 +1,202 @@
+# cd.yml - Simple CI/CD with Manual Approval (Original Structure)
+name: Continuous Deployment
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+      - preprod
+
+jobs:
+  # Auto deployment สำหรับ dev และ preprod
+  auto-deploy:
+    if: github.ref != 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment: 
+      name: ${{ github.ref_name }}
+    
+    outputs:
+      new_version: ${{ steps.version_bump.outputs.new_tag }}
+      new_version_no_prefix: ${{ steps.version_bump.outputs.new_tag_no_prefix }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Auto Version Bump (Dev/Preprod)
+        id: version_bump
+        uses: phips28/gh-action-bump-version@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag-prefix: 'v'
+          tag-suffix: '-${{ github.ref_name }}'
+          commit-message: 'CI: bump to {{version}} [${{ github.ref_name }}]'
+
+      - name: Update React Native version
+        run: |
+          npm install -g react-native-version
+          react-native-version --never-amend --target android
+          react-native-version --never-amend --target ios
+
+      - name: Commit version changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -A
+          git diff --staged --quiet || git commit -m "Update React Native version files [skip ci]"
+          git push
+
+      # Testing Steps (รวมใน workflow เดียว)
+      - name: Use Node.js 20
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.18.0
+          cache: "yarn"
+
+      - name: Install Node modules
+        run: yarn ci
+
+      - name: Code Linting
+        run: yarn lint
+
+      - name: Unit & Integration tests
+        run: yarn test:ci
+
+      # Deploy to Testing
+      - name: Deploy Android to Testing
+        uses: ./.github/workflows/android-build.yml
+        with:
+          environment: 'release'
+          publish: true
+          version: ${{ steps.version_bump.outputs.new_tag_no_prefix }}
+          branch: ${{ github.ref_name }}
+        secrets: inherit
+
+      - name: Deploy iOS to Testing  
+        uses: ./.github/workflows/ios-build.yml
+        with:
+          environment: 'release'
+          publish: true
+          version: ${{ steps.version_bump.outputs.new_tag_no_prefix }}
+          branch: ${{ github.ref_name }}
+        secrets: inherit
+
+  # Production deployment (Auto build + Manual approval)
+  production-deploy:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    
+    # Manual approval required for production
+    environment: 
+      name: production
+      # GitHub will pause here until manual approval
+      
+    outputs:
+      new_version: ${{ steps.version_bump.outputs.new_tag }}
+      new_version_no_prefix: ${{ steps.version_bump.outputs.new_tag_no_prefix }}
+      
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Production Version Bump
+        id: version_bump
+        uses: phips28/gh-action-bump-version@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag-prefix: 'v'
+          target-branch: 'master'
+          commit-message: 'RELEASE: bump to {{version}} [production]'
+
+      - name: Update React Native version
+        run: |
+          npm install -g react-native-version
+          react-native-version --never-amend --target android
+          react-native-version --never-amend --target ios
+
+      - name: Commit version changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -A
+          git diff --staged --quiet || git commit -m "Update React Native version files [skip ci]"
+          git push
+
+      # Full Testing Suite for Production
+      - name: Use Node.js 20
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.18.0
+          cache: "yarn"
+
+      - name: Install Node modules
+        run: yarn ci
+
+      - name: Code Linting
+        run: yarn lint
+
+      - name: Type Checking
+        run: yarn type-check
+
+      - name: Unit & Integration tests
+        run: yarn test:ci
+
+      - name: Security Audit
+        run: yarn audit --audit-level moderate
+        continue-on-error: true
+
+      # Deploy to Production
+      - name: Deploy Android to Production
+        uses: ./.github/workflows/android-build.yml
+        with:
+          environment: 'release'
+          publish: true
+          version: ${{ steps.version_bump.outputs.new_tag_no_prefix }}
+          branch: 'master'
+        secrets: inherit
+
+      - name: Deploy iOS to Production
+        uses: ./.github/workflows/ios-build.yml
+        with:
+          environment: 'release'
+          publish: true
+          version: ${{ steps.version_bump.outputs.new_tag_no_prefix }}
+          branch: 'master'
+        secrets: inherit
+
+      - name: Create Production Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version_bump.outputs.new_tag }}
+          release_name: 'Production Release ${{ steps.version_bump.outputs.new_tag }}'
+          body: |
+            ## 🚀 Production Release
+            
+            **Version:** ${{ steps.version_bump.outputs.new_tag }}
+            **Environment:** Production
+            **Deployed by:** ${{ github.actor }}
+            **Branch:** master
+            
+            ### 📱 App Stores
+            - **Android:** Google Play Store
+            - **iOS:** App Store
+            
+            ### 🔄 Rollback Instructions
+            If needed, rollback using:
+            ```bash
+            git revert ${{ github.sha }}
+            git push origin master
+            ```
+          draft: false
+          prerelease: false
