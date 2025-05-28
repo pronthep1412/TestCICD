@@ -1,5 +1,7 @@
-import { getDefaultConfig, mergeConfig } from '@react-native/metro-config';
+/* eslint-disable @typescript-eslint/no-require-imports */
+const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
+/* eslint-enable @typescript-eslint/no-require-imports */
 
 const config = {};
 
-export default mergeConfig(await getDefaultConfig(), config);
+module.exports = mergeConfig(getDefaultConfig(__dirname), config);

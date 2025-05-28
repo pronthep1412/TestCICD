@@ -33,10 +33,10 @@ jobs:
       - name: Install or update fastlane
         run: sudo gem install fastlane --no-document
 
-      - name: Use Node.js 22
+      - name: Use Node.js 20
         uses: actions/setup-node@v3
         with:
-          node-version: 22.15.1
+          node-version: 20.10.0
           cache: "yarn"
 
       - name: Install Node modules
