@@ -101,7 +101,10 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.1
         with:
           ssh-private-key: ${{ secrets.MATCH_PRIVATE_KEY }}
-          
+      
+      - name: Check Code Signing Identities
+        run: security find-identity -v -p codesigning
+        
       - name: Setup provisioning profile for Debug (development)
         if: inputs.environment == 'debug'
         env:
