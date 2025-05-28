@@ -10,7 +10,7 @@ platform :ios do
   # Lane สำหรับ develop branch
   lane :deploy_develop do
     match(
-      type: "development",
+      type: "appstore",
       readonly: true
     )
     
