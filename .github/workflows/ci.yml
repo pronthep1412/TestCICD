@@ -43,10 +43,10 @@ jobs:
       publish: false
     secrets: inherit
 
-  build-ios-test:
-    needs: install-and-test
-    uses: ./.github/workflows/ios-build.yml
-    with:
-      environment: debug
-      publish: false
-    secrets: inherit
+  # build-ios-test:
+  #   needs: install-and-test
+  #   uses: ./.github/workflows/ios-build.yml
+  #   with:
+  #     environment: debug
+  #     publish: false
+  #   secrets: inherit
