@@ -96,7 +96,12 @@ jobs:
 
       - name: Select Xcode version
         run: sudo xcode-select -s /Applications/Xcode_16.2.app
-
+      
+      - name: Setup SSH for Match Repo
+        uses: webfactory/ssh-agent@v0.8.1
+        with:
+          ssh-private-key: ${{ secrets.MATCH_PRIVATE_KEY }}
+          
       - name: Setup provisioning profile for Debug (development)
         if: inputs.environment == 'debug'
         env:
