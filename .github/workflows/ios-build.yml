@@ -149,22 +149,22 @@ jobs:
           bundle exec fastlane deploy_master
 
       # Build only (no deploy) - fallback ใช้ action เดิม
-      - name: Build iOS Release (No Deploy)
-        if: inputs.environment == 'release' && inputs.publish == false && secrets.P12_BASE64
-        uses: yukiarrr/ios-build-action@v1.5.0
-        with:
-          project-path: ios/TestCICD.xcodeproj
-          p12-base64: ${{ secrets.P12_BASE64 }}
-          mobileprovision-base64: ${{ secrets.MOBILEPROVISION_BASE64 }}
-          code-signing-identity: "Apple Distribution"
-          certificate-password: ${{ secrets.CERTIFICATE_PASSWORD }}
-          team-id: ${{ secrets.IOS_TEAM_ID }}
-          workspace-path: ios/TestCICD.xcworkspace
-          output-path: "TestCICD.ipa"
+      # - name: Build iOS Release (No Deploy)
+      #   if: inputs.environment == 'release' && inputs.publish == false && secrets.P12_BASE64
+      #   uses: yukiarrr/ios-build-action@v1.5.0
+      #   with:
+      #     project-path: ios/TestCICD.xcodeproj
+      #     p12-base64: ${{ secrets.P12_BASE64 }}
+      #     mobileprovision-base64: ${{ secrets.MOBILEPROVISION_BASE64 }}
+      #     code-signing-identity: "Apple Distribution"
+      #     certificate-password: ${{ secrets.CERTIFICATE_PASSWORD }}
+      #     team-id: ${{ secrets.IOS_TEAM_ID }}
+      #     workspace-path: ios/TestCICD.xcworkspace
+      #     output-path: "TestCICD.ipa"
 
       # Build only (no deploy) - ใช้ Fastlane
       - name: Build iOS Release with Fastlane (No Deploy)
-        if: inputs.environment == 'release' && inputs.publish == false && !secrets.P12_BASE64
+        if: inputs.environment == 'release' && inputs.publish == false
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
