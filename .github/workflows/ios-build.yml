@@ -101,21 +101,16 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.1
         with:
           ssh-private-key: ${{ secrets.MATCH_PRIVATE_KEY }}
-      
-      
-
+          
       - name: Setup provisioning profile for Debug (development)
         if: inputs.environment == 'debug'
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           cd ios
-          bundle exec fastlane match development --readonly --keychain_password "$KEYCHAIN_PASSWORD"
+          bundle exec fastlane match development --readonly
           
-      - name: Check Code Signing Identities
-        run: security find-identity -v -p codesigning
       # - name: Setup App Store Connect API Key
       #   if: inputs.publish == true
       #   run: |
