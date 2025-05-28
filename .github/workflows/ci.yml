@@ -1,4 +1,5 @@
-name: Pull Request into Master, Develop and Preprod
+# ci.yml - สำหรับ testing PR เท่านั้น
+name: Pull Request Testing
 
 on:
   pull_request:
@@ -6,17 +7,11 @@ on:
       - "master"
       - "develop"
       - "preprod"
-  push:
-    branches:
-      - master
-      - develop
-      - preprod
 
 jobs:
-  # First Job: Node.js Testing
+  # Testing Job
   install-and-test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,26 +34,19 @@ jobs:
       - name: Unit & Integration tests
         run: yarn test:ci
 
-      # - name: Jest coverage report
-      #   uses: ArtiomTr/jest-coverage-report-action@v2.2.1
-      #   with:
-      #     coverage-file: ./coverage/coverage-final.json
-      #     base-coverage-file: ./coverage/coverage-final.json
-      #     github-token: ${{ secrets.GITHUB_TOKEN }}
-      #     skip-step: all
-
-  # Second Job
-  build-android:
+  # Build Testing (ไม่ deploy)
+  build-android-test:
     needs: install-and-test
     uses: ./.github/workflows/android-build.yml
     with:
-      environment: release
+      environment: debug
+      publish: false
     secrets: inherit
 
-  # Third Job
-  # build-ios:
-  #   needs: install-and-test
-  #   uses: ./.github/workflows/ios-build.yml
-  #   with:
-  #     environment: release
-  #   secrets: inherit
+  build-ios-test:
+    needs: install-and-test
+    uses: ./.github/workflows/ios-build.yml
+    with:
+      environment: debug
+      publish: false
+    secrets: inherit

@@ -7,11 +7,12 @@
     "ci": "yarn install --frozen-lockfile",
     "android": "react-native run-android",
     "ios": "react-native run-ios",
-    "lint": "eslint src --ext .js,.jsx,.ts,.tsx --fix",
     "start": "react-native start",
     "test": "jest",
     "prepare": "husky",
-    "test:ci": "jest --ci --coverage --coverageReporters=json"
+    "test:ci": "jest --coverage --watchAll=false",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "react": "19.0.0",

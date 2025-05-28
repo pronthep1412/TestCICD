@@ -1,0 +1,194 @@
+# ios-build.yml - Updated with Target Support
+name: "iOS Build and Deploy"
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      publish:
+        required: false
+        type: boolean
+        description: Deploy to stores
+        default: false
+      version:
+        required: false
+        type: string
+        description: App version
+      branch:
+        required: false
+        type: string
+        description: Branch name
+      target:
+        required: false
+        type: string
+        description: Deployment target (testing/production)
+        default: 'testing'
+    secrets:
+      APPLE_ID:
+        required: true
+      APPLE_ID_PASSWORD:
+        required: true
+      APP_STORE_CONNECT_API_KEY_ID:
+        required: true
+      APP_STORE_CONNECT_API_ISSUER_ID:
+        required: true
+      APP_STORE_CONNECT_API_KEY:
+        required: true
+      MATCH_PASSWORD:
+        required: true
+      MATCH_GIT_URL:
+        required: true
+      NPM_TOKEN:
+        required: true
+      P12_BASE64:
+        required: false
+      MOBILEPROVISION_BASE64:
+        required: false
+      CERTIFICATE_PASSWORD:
+        required: false
+      IOS_TEAM_ID:
+        required: false
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    
+    # Environment protection สำหรับ production
+    environment: 
+      name: ${{ inputs.target == 'production' && 'production-ios' || format('{0}-ios', inputs.branch) }}
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.18.0
+          cache: "yarn"
+
+      - name: Install Node modules
+        run: yarn ci
+
+      - name: Setup Ruby for Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.0'
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Restore Pods cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ios/Pods
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+          key: ${{ runner.os }}-pods-${{ hashFiles('ios/Podfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
+
+      - name: Install pod dependencies
+        run: cd ios && pod install && cd ..
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+
+      - name: Setup App Store Connect API Key
+        if: inputs.publish == true
+        run: |
+          mkdir -p ~/private_keys
+          echo "${{ secrets.APP_STORE_CONNECT_API_KEY }}" | base64 -d > ~/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
+
+      # Build for Debug (PR testing)
+      - name: Build iOS Debug
+        if: inputs.environment == 'debug'
+        run: |
+          cd ios
+          xcodebuild -workspace TestCICD.xcworkspace \
+                     -scheme TestCICD \
+                     -configuration Debug \
+                     -archivePath TestCICD.xcarchive \
+                     archive -allowProvisioningUpdates
+          xcodebuild -exportArchive \
+                     -archivePath TestCICD.xcarchive \
+                     -exportPath . \
+                     -exportOptionsPlist exportOptions-debug.plist
+
+      # Build and Deploy for Testing
+      - name: Build and Deploy iOS Testing
+        if: inputs.environment == 'release' && inputs.publish == true && inputs.target == 'testing'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+        run: |
+          cd ios
+          # เรียก Fastlane สำหรับ testing
+          bundle exec fastlane deploy_${{ inputs.branch }}
+
+      # Build and Deploy for Production
+      - name: Build and Deploy iOS Production
+        if: inputs.environment == 'release' && inputs.publish == true && inputs.target == 'production'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+        run: |
+          cd ios
+          # เรียก Fastlane สำหรับ production
+          bundle exec fastlane deploy_master
+
+      # Build only (no deploy) - fallback ใช้ action เดิม
+      - name: Build iOS Release (No Deploy)
+        if: inputs.environment == 'release' && inputs.publish == false && secrets.P12_BASE64
+        uses: yukiarrr/ios-build-action@v1.5.0
+        with:
+          project-path: ios/TestCICD.xcodeproj
+          p12-base64: ${{ secrets.P12_BASE64 }}
+          mobileprovision-base64: ${{ secrets.MOBILEPROVISION_BASE64 }}
+          code-signing-identity: "Apple Distribution"
+          certificate-password: ${{ secrets.CERTIFICATE_PASSWORD }}
+          team-id: ${{ secrets.IOS_TEAM_ID }}
+          workspace-path: ios/TestCICD.xcworkspace
+          output-path: "TestCICD.ipa"
+
+      # Build only (no deploy) - ใช้ Fastlane
+      - name: Build iOS Release with Fastlane (No Deploy)
+        if: inputs.environment == 'release' && inputs.publish == false && !secrets.P12_BASE64
+        env:
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+        run: |
+          cd ios
+          bundle exec fastlane build_only
+
+      # Upload Artifact for non-deploy builds
+      - name: Upload Artifact
+        if: inputs.publish == false
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestCICD-ios-${{ inputs.environment }}-${{ github.run_id }}
+          path: |
+            TestCICD.ipa
+            ios/TestCICD.ipa
+
+      # Deployment Summary
+      - name: Deployment Summary
+        if: inputs.publish == true
+        run: |
+          echo "## 🍎 iOS Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ inputs.branch }}" >> $GITHUB_STEP_SUMMARY  
+          echo "- **Target:** ${{ inputs.target }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Track:** ${{ inputs.target == 'production' && 'App Store' || (inputs.branch == 'develop' && 'TestFlight Internal' || 'TestFlight Beta') }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ✅ Deployed successfully" >> $GITHUB_STEP_SUMMARY

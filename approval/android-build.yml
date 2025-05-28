@@ -1,0 +1,154 @@
+# android-build.yml - Updated with Target Support
+name: "Android Build and Deploy"
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      publish:
+        required: false
+        type: boolean
+        description: Deploy to stores
+        default: false
+      version:
+        required: false
+        type: string
+        description: App version
+      branch:
+        required: false
+        type: string
+        description: Branch name
+      target:
+        required: false
+        type: string
+        description: Deployment target (testing/production)
+        default: 'testing'
+    secrets:
+      NPM_TOKEN:
+        required: true
+      GOOGLE_PLAY_JSON_KEY:
+        required: true
+      KEYSTORE_FILE:
+        required: true
+      KEYSTORE_PASSWORD:
+        required: true
+      KEY_ALIAS:
+        required: true
+      KEY_PASSWORD:
+        required: true
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    
+    # Environment protection สำหรับ production
+    environment: 
+      name: ${{ inputs.target == 'production' && 'production-android' || format('{0}-android', inputs.branch) }}
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.18.0
+          cache: "yarn"
+
+      - name: Install Node modules
+        run: yarn ci
+
+      - name: Setup Ruby for Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.0'
+          bundler-cache: true
+          working-directory: android
+
+      - name: Cache Gradle Wrapper
+        uses: actions/cache@v3
+        with:
+          path: ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Cache Gradle Dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.gradle/caches
+          key: ${{ runner.os }}-gradle-caches-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-caches-
+
+      - name: Make Gradlew Executable
+        run: cd android && chmod +x ./gradlew
+
+      - name: Setup Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > android/app/keystore.jks
+
+      - name: Create keystore.properties
+        run: |
+          echo "storeFile=keystore.jks" > android/keystore.properties
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> android/keystore.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/keystore.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/keystore.properties
+
+      # Build for Debug (PR testing)
+      - name: Build Android Debug
+        if: inputs.environment == 'debug'
+        run: cd android && ./gradlew bundleDebug --no-daemon
+
+      # Build and Deploy for Testing
+      - name: Build and Deploy Android Testing
+        if: inputs.environment == 'release' && inputs.publish == true && inputs.target == 'testing'
+        env:
+          GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
+        run: |
+          cd android
+          # สร้าง Google Play JSON key file
+          echo "$GOOGLE_PLAY_JSON_KEY" | base64 -d > google-play-key.json
+          
+          # เรียก Fastlane สำหรับ testing
+          bundle exec fastlane deploy_${{ inputs.branch }}
+
+      # Build and Deploy for Production  
+      - name: Build and Deploy Android Production
+        if: inputs.environment == 'release' && inputs.publish == true && inputs.target == 'production'
+        env:
+          GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
+        run: |
+          cd android
+          # สร้าง Google Play JSON key file
+          echo "$GOOGLE_PLAY_JSON_KEY" | base64 -d > google-play-key.json
+          
+          # เรียก Fastlane สำหรับ production
+          bundle exec fastlane deploy_master
+
+      # Build only (no deploy)
+      - name: Build Android Release (No Deploy)
+        if: inputs.environment == 'release' && inputs.publish == false
+        run: cd android && ./gradlew bundleRelease --no-daemon
+
+      # Upload Artifact for non-deploy builds
+      - name: Upload Artifact
+        if: inputs.publish == false
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestCICD-android-${{ inputs.environment }}-${{ github.run_id }}
+          path: |
+            android/app/build/outputs/bundle/debug/app-debug.aab
+            android/app/build/outputs/bundle/release/app-release.aab
+
+      # Deployment Summary
+      - name: Deployment Summary
+        if: inputs.publish == true
+        run: |
+          echo "## 🤖 Android Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ inputs.branch }}" >> $GITHUB_STEP_SUMMARY  
+          echo "- **Target:** ${{ inputs.target }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Track:** ${{ inputs.target == 'production' && 'production' || (inputs.branch == 'develop' && 'internal' || 'alpha') }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ✅ Deployed successfully" >> $GITHUB_STEP_SUMMARY
