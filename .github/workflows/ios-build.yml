@@ -109,7 +109,7 @@ jobs:
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
         run: |
           cd ios
-          bundle exec fastlane match appstore --readonly
+          bundle exec fastlane match development --readonly
           
       - name: Setup App Store Connect API Key
         if: inputs.publish == true
@@ -118,19 +118,30 @@ jobs:
           echo "${{ secrets.APP_STORE_CONNECT_API_KEY }}" | base64 -d > ~/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
       
       # Build for Debug (PR testing)
-      - name: Build iOS Debug
+      # - name: Build iOS Debug
+      #   if: inputs.environment == 'debug'
+      #   run: |
+      #     cd ios
+      #     xcodebuild -workspace TestCICD.xcworkspace \
+      #                -scheme TestCICD \
+      #                -configuration Debug \
+      #                -archivePath TestCICD.xcarchive \
+      #                archive -allowProvisioningUpdates
+      #     xcodebuild -exportArchive \
+      #                -archivePath TestCICD.xcarchive \
+      #                -exportPath . \
+      #                -exportOptionsPlist exportOptions-debug.plist
+
+      - name: Build iOS Debug (Simulator)
         if: inputs.environment == 'debug'
         run: |
           cd ios
           xcodebuild -workspace TestCICD.xcworkspace \
-                     -scheme TestCICD \
-                     -configuration Debug \
-                     -archivePath TestCICD.xcarchive \
-                     archive -allowProvisioningUpdates
-          xcodebuild -exportArchive \
-                     -archivePath TestCICD.xcarchive \
-                     -exportPath . \
-                     -exportOptionsPlist exportOptions-debug.plist
+                    -scheme TestCICD \
+                    -configuration Debug \
+                    -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
+                    -archivePath TestCICD.xcarchive \
+                    archive
 
       # Build and Deploy for Testing
       - name: Build and Deploy iOS Testing
