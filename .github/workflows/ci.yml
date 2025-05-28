@@ -35,13 +35,13 @@ jobs:
       #   run: yarn test:ci
 
   # Build Testing (ไม่ deploy)
-  # build-android-test:
-  #   needs: install-and-test
-  #   uses: ./.github/workflows/android-build.yml
-  #   with:
-  #     environment: debug
-  #     publish: false
-  #   secrets: inherit
+  build-android-test:
+    needs: install-and-test
+    uses: ./.github/workflows/android-build.yml
+    with:
+      environment: debug
+      publish: false
+    secrets: inherit
 
   build-ios-test:
     needs: install-and-test
