@@ -14,7 +14,8 @@ platform :android do
       track: 'internal',
       json_key: "google-play-key.json",
       aab: "app/build/outputs/bundle/release/app-release.aab",
-      release_status: 'completed'
+      release_status: 'completed',
+      package_name: "test.cicd.appibc"
     )
     
     slack(
@@ -34,7 +35,8 @@ platform :android do
       track: 'alpha',
       json_key: "google-play-key.json",
       aab: "app/build/outputs/bundle/release/app-release.aab",
-      release_status: 'completed'
+      release_status: 'completed',
+      package_name: "test.cicd.appibc"
     )
     
     slack(
@@ -55,7 +57,8 @@ platform :android do
       json_key: "google-play-key.json",
       aab: "app/build/outputs/bundle/release/app-release.aab",
       release_status: 'completed',
-      rollout: '0.1' # เริ่มต้นด้วย 10% rollout
+      rollout: '0.1', # เริ่มต้นด้วย 10% rollout
+      package_name: "test.cicd.appibc"
     )
     
     slack(
@@ -83,7 +86,8 @@ platform :android do
       skip_upload_aab: true,
       skip_upload_metadata: true,
       skip_upload_images: true,
-      skip_upload_screenshots: true
+      skip_upload_screenshots: true,
+      package_name: "test.cicd.appibc"
     )
     
     slack(

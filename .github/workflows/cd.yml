@@ -61,9 +61,6 @@ jobs:
           node-version: 20.18.0
           cache: "yarn"
 
-      - name: Install Node modules
-        run: yarn ci
-
       - name: Code Linting
         run: yarn lint
 
