@@ -1,4 +1,4 @@
-# cd.yml - Simple CI/CD with Manual Approval (Original Structure)
+# cd.yml - Fixed version
 name: Continuous Deployment
 
 on:
@@ -51,7 +51,6 @@ jobs:
           git diff --staged --quiet || git commit -m "Update React Native version files [skip ci]"
           git push
 
-      # Testing Steps (รวมใน workflow เดียว)
       - name: Use Node.js 20
         uses: actions/setup-node@v3
         with:
@@ -67,34 +66,32 @@ jobs:
       - name: Unit & Integration tests
         run: yarn test:ci
 
-      # Deploy to Testing
-      - name: Deploy Android to Testing
-        uses: ./.github/workflows/android-build.yml
-        with:
-          environment: 'release'
-          publish: true
-          version: ${{ steps.version_bump.outputs.new_tag_no_prefix }}
-          branch: ${{ github.ref_name }}
-        secrets: inherit
+  deploy-android-dev:
+    needs: auto-deploy
+    uses: ./.github/workflows/android-build.yml
+    with:
+      environment: 'release'
+      publish: true
+      version: ${{ needs.auto-deploy.outputs.new_version_no_prefix }}
+      branch: ${{ github.ref_name }}
+    secrets: inherit
 
-      - name: Deploy iOS to Testing  
-        uses: ./.github/workflows/ios-build.yml
-        with:
-          environment: 'release'
-          publish: true
-          version: ${{ steps.version_bump.outputs.new_tag_no_prefix }}
-          branch: ${{ github.ref_name }}
-        secrets: inherit
+  deploy-ios-dev:
+    needs: auto-deploy
+    uses: ./.github/workflows/ios-build.yml
+    with:
+      environment: 'release'
+      publish: true
+      version: ${{ needs.auto-deploy.outputs.new_version_no_prefix }}
+      branch: ${{ github.ref_name }}
+    secrets: inherit
 
   # Production deployment (Auto build + Manual approval)
   production-deploy:
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
-    
-    # Manual approval required for production
     environment: 
       name: production
-      # GitHub will pause here until manual approval
       
     outputs:
       new_version: ${{ steps.version_bump.outputs.new_tag }}
@@ -131,7 +128,6 @@ jobs:
           git diff --staged --quiet || git commit -m "Update React Native version files [skip ci]"
           git push
 
-      # Full Testing Suite for Production
       - name: Use Node.js 20
         uses: actions/setup-node@v3
         with:
@@ -154,25 +150,6 @@ jobs:
         run: yarn audit --audit-level moderate
         continue-on-error: true
 
-      # Deploy to Production
-      - name: Deploy Android to Production
-        uses: ./.github/workflows/android-build.yml
-        with:
-          environment: 'release'
-          publish: true
-          version: ${{ steps.version_bump.outputs.new_tag_no_prefix }}
-          branch: 'master'
-        secrets: inherit
-
-      - name: Deploy iOS to Production
-        uses: ./.github/workflows/ios-build.yml
-        with:
-          environment: 'release'
-          publish: true
-          version: ${{ steps.version_bump.outputs.new_tag_no_prefix }}
-          branch: 'master'
-        secrets: inherit
-
       - name: Create Production Release
         uses: actions/create-release@v1
         env:
@@ -182,7 +159,6 @@ jobs:
           release_name: 'Production Release ${{ steps.version_bump.outputs.new_tag }}'
           body: |
             ## 🚀 Production Release
-            
             **Version:** ${{ steps.version_bump.outputs.new_tag }}
             **Environment:** Production
             **Deployed by:** ${{ github.actor }}
@@ -200,3 +176,23 @@ jobs:
             ```
           draft: false
           prerelease: false
+
+  deploy-android-prod:
+    needs: production-deploy
+    uses: ./.github/workflows/android-build.yml
+    with:
+      environment: 'release'
+      publish: true
+      version: ${{ needs.production-deploy.outputs.new_version_no_prefix }}
+      branch: 'master'
+    secrets: inherit
+
+  deploy-ios-prod:
+    needs: production-deploy
+    uses: ./.github/workflows/ios-build.yml
+    with:
+      environment: 'release'
+      publish: true
+      version: ${{ needs.production-deploy.outputs.new_version_no_prefix }}
+      branch: 'master'
+    secrets: inherit
