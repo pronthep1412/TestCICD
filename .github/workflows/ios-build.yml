@@ -172,12 +172,12 @@ jobs:
           bundle exec fastlane build_only
 
       # Upload Artifact for non-deploy builds
-      - name: Upload Artifact
-        if: inputs.publish == false
-        uses: actions/upload-artifact@v4
-        with:
-          name: TestCICD-ios-${{ inputs.environment }}-${{ github.run_id }}
-          path: build/TestCICD.ipa
+      # - name: Upload Artifact
+      #   if: inputs.publish == false
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: TestCICD-ios-${{ inputs.environment }}-${{ github.run_id }}
+      #     path: build/TestCICD.ipa
 
       # Deployment Summary
       - name: Deployment Summary
