@@ -54,6 +54,7 @@ on:
 jobs:
   build-ios:
     runs-on: macos-15
+    timeout-minutes: 45
     
     # Environment protection สำหรับ production
     environment: 
@@ -80,16 +81,18 @@ jobs:
           bundler-cache: true
           working-directory: ios
 
-      - name: Restore Pods cache
+      - name: Restore Build Cache
         uses: actions/cache@v3
         with:
           path: |
             ios/Pods
+            ios/DerivedData
             ~/Library/Caches/CocoaPods
             ~/.cocoapods
-          key: ${{ runner.os }}-pods-${{ hashFiles('ios/Podfile.lock') }}
+            ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-ios-${{ hashFiles('ios/Podfile.lock', 'yarn.lock') }}
           restore-keys: |
-            ${{ runner.os }}-pods-
+            ${{ runner.os }}-ios-
 
       - name: Install pod dependencies
         run: cd ios && pod install && cd ..
@@ -102,14 +105,20 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.MATCH_PRIVATE_KEY }}
           
+      # - name: Setup provisioning profile for Debug (development)
+      #   if: inputs.environment == 'debug'
+      #   env:
+      #     MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+      #     MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+      #   run: |
+      #     cd ios
+      #     bundle exec fastlane match development --readonly
+
       - name: Setup provisioning profile for Debug (development)
         if: inputs.environment == 'debug'
-        env:
-          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
         run: |
-          cd ios
-          bundle exec fastlane match development --readonly
+          echo "Skipping provisioning setup for simulator build"
+          echo "Simulator builds don't require code signing"
           
       - name: Setup App Store Connect API Key
         if: inputs.publish == true
@@ -117,7 +126,7 @@ jobs:
           mkdir -p ~/private_keys
           echo "${{ secrets.APP_STORE_CONNECT_API_KEY }}" | base64 -d > ~/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
 
-      - name: Build iOS Debug (Simulator)
+      - name: Build iOS Debug (Simulator) - Quick Build
         if: inputs.environment == 'debug'
         run: |
           cd ios
@@ -125,8 +134,8 @@ jobs:
                     -scheme TestCICD \
                     -configuration Debug \
                     -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
-                    -archivePath TestCICD.xcarchive \
-                    archive
+                    -derivedDataPath ./DerivedData \
+                    build
 
       # Build and Deploy for Testing
       - name: Build and Deploy iOS Testing
