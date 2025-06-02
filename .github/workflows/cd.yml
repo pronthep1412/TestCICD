@@ -37,6 +37,9 @@ jobs:
           tag-suffix: '-${{ github.ref_name }}'
           commit-message: 'CI: bump to {{version}} [${{ github.ref_name }}]'
 
+      - name: Install dependencies
+        run: yarn ci
+  
       - name: Update React Native version
         run: |
           npm install -g react-native-version
@@ -48,7 +51,7 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add -A
-          git diff --staged --quiet || git commit -m "Update version files [skip ci]"
+          git diff --staged --quiet || git commit -m "Update React Native version files [skip ci]"
           git push
 
       - name: Use Node.js 20
