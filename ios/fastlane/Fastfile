@@ -26,6 +26,7 @@ platform :ios do
     )
     
     upload_to_testflight(
+      username: "dev3@ibusiness.co.th",
       skip_waiting_for_build_processing: true,
       groups: ["Internal Testers", "Developers"]
     )
@@ -51,6 +52,7 @@ platform :ios do
     )
     
     upload_to_testflight(
+      username: "dev3@ibusiness.co.th",  # 
       skip_waiting_for_build_processing: false,
       groups: ["Beta Testers", "QA Team"]
     )
