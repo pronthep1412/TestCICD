@@ -18,11 +18,15 @@ platform :ios do
       scheme: "TestCICD",
       workspace: "TestCICD.xcworkspace",
       configuration: "Release",
-      export_method: "app-store"
+      export_method: "app-store",
+      clean: true,
+      output_directory: "./build",
+      output_name: "TestCICD.ipa"
+      include_bitcode: false  # ลด build time
     )
     
     upload_to_testflight(
-      skip_waiting_for_build_processing: false,
+      skip_waiting_for_build_processing: true,
       groups: ["Internal Testers", "Developers"]
     )
     
@@ -112,7 +116,9 @@ platform :ios do
       scheme: "TestCICD",
       workspace: "TestCICD.xcworkspace",
       configuration: "Release",
-      export_method: "app-store"
+      export_method: "app-store",
+      output_directory: "./build",
+      output_name: "TestCICD.ipa"
     )
   end
 
