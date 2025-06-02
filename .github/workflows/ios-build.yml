@@ -105,20 +105,14 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.MATCH_PRIVATE_KEY }}
           
-      # - name: Setup provisioning profile for Debug (development)
-      #   if: inputs.environment == 'debug'
-      #   env:
-      #     MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-      #     MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
-      #   run: |
-      #     cd ios
-      #     bundle exec fastlane match development --readonly
-
       - name: Setup provisioning profile for Debug (development)
         if: inputs.environment == 'debug'
+        env:
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
         run: |
-          echo "Skipping provisioning setup for simulator build"
-          echo "Simulator builds don't require code signing"
+          cd ios
+          bundle exec fastlane match development --readonly
           
       - name: Setup App Store Connect API Key
         if: inputs.publish == true

@@ -116,7 +116,9 @@ platform :ios do
       scheme: "TestCICD",
       workspace: "TestCICD.xcworkspace",
       configuration: "Release",
-      export_method: "app-store"
+      export_method: "app-store",
+      output_directory: "./build",
+      output_name: "TestCICD.ipa"
     )
   end
 
