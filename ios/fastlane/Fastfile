@@ -21,6 +21,7 @@ platform :ios do
       export_method: "app-store",
       clean: true,
       output_directory: "./build",
+      output_name: "TestCICD.ipa"
       include_bitcode: false  # ลด build time
     )
     
