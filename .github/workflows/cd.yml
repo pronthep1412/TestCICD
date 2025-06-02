@@ -24,14 +24,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_GITHUB }}
           fetch-depth: 0
 
       - name: Auto Version Bump (Dev/Preprod)
         id: version_bump
         uses: phips28/gh-action-bump-version@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_GITHUB }}
         with:
           tag-prefix: 'v'
           tag-suffix: '-${{ github.ref_name }}'
@@ -101,14 +101,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_GITHUB }}
           fetch-depth: 0
 
       - name: Production Version Bump
         id: version_bump
         uses: phips28/gh-action-bump-version@master
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_GITHUB }}
         with:
           tag-prefix: 'v'
           target-branch: 'master'
@@ -153,7 +153,7 @@ jobs:
       - name: Create Production Release
         uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_GITHUB }}
         with:
           tag_name: ${{ steps.version_bump.outputs.new_tag }}
           release_name: 'Production Release ${{ steps.version_bump.outputs.new_tag }}'
