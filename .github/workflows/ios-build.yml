@@ -121,7 +121,12 @@ jobs:
         if: inputs.environment == 'debug'
         run: |
           cd ios
-          xcodebuild -workspace TestCICD.xcworkspace -scheme TestCICD -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' -archivePath TestCICD.xcarchive archive
+          xcodebuild -workspace TestCICD.xcworkspace \
+                    -scheme TestCICD \
+                    -configuration Debug \
+                    -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest'
+                    -archivePath TestCICD.xcarchive \
+                    archive
 
       # Build and Deploy for Testing
       - name: Build and Deploy iOS Testing
