@@ -151,6 +151,7 @@ jobs:
       environment: debug
       publish: false
       version: ${{ needs.test-and-validate.outputs.pr_version }}
+      version_code: ${{ needs.setup-and-test.outputs.version_code }}
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
     secrets: inherit
 
@@ -162,6 +163,7 @@ jobs:
       environment: debug
       publish: false
       version: ${{ needs.test-and-validate.outputs.pr_version }}
+      version_code: ${{ needs.setup-and-test.outputs.version_code }}
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
     secrets: inherit
 

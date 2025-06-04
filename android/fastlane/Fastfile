@@ -35,7 +35,7 @@ platform :android do
       version_code = base + run_number
       
       # อัพเดท Android version ใน build.gradle โดยใช้ sed command
-      gradle_file = "app/build.gradle"
+      gradle_file = "../app/build.gradle"
       
       # Update versionName
       sh("sed -i 's/versionName \".*\"/versionName \"#{new_version}\"/' #{gradle_file}")
@@ -59,7 +59,7 @@ platform :android do
     version_name = options[:version_name] || prompt(text: "Enter version name (e.g., 1.2.3):")
     version_code = options[:version_code] || prompt(text: "Enter version code (e.g., 1000123):").to_i
     
-    gradle_file = "app/build.gradle"
+    gradle_file = "../app/build.gradle"
     
     # Update using sed commands
     sh("sed -i 's/versionName \".*\"/versionName \"#{version_name}\"/' #{gradle_file}")
@@ -74,7 +74,7 @@ platform :android do
   lane :bump_version do |options|
     type = options[:type] || "patch"  # patch, minor, major
     
-    gradle_file = "app/build.gradle"
+    gradle_file = "../app/build.gradle"
     
     # อ่าน version ปัจจุบันจาก build.gradle
     gradle_content = File.read(gradle_file)
@@ -112,7 +112,7 @@ platform :android do
   # 📱 Alternative approach using increment_version_code action
   lane :increment_build do
     increment_version_code(
-      gradle_file_path: "app/build.gradle"
+      gradle_file_path: "../app/build.gradle"
     )
     UI.success("✅ Incremented version code")
   end
