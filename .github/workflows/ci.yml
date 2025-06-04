@@ -19,6 +19,7 @@ jobs:
     
     outputs:
       pr_version: ${{ steps.version.outputs.version }}
+      version_code: ${{ steps.version.outputs.version_code }}
       target_branch: ${{ steps.branch.outputs.name }}
       coverage: ${{ steps.coverage.outputs.percentage }}
       
