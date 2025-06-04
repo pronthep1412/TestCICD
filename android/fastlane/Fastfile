@@ -1,73 +1,44 @@
-# android/fastlane/Fastfile
+# android/fastlane/Fastfile - Improved version
 default_platform(:android)
 
 platform :android do
   
+  before_all do
+    ensure_bundle_exec
+  end
+
   # Lane สำหรับ develop branch
   lane :deploy_develop do
-    gradle(
-      task: "bundle",
-      build_type: "Release"
-    )
-    
-    upload_to_play_store(
+    build_and_deploy(
       track: 'internal',
-      json_key: "google-play-key.json",
-      aab: "app/build/outputs/bundle/release/app-release.aab",
-      release_status: 'completed',
-      package_name: "test.cicd.appibc"
+      release_status: 'completed'
     )
     
-    slack(
-      message: "🚀 Android Development build deployed to Play Store Internal Testing!",
-      channel: "#releases"
-    ) if ENV["SLACK_URL"]
+    notify_slack("🚀 Android Development build deployed to Internal Testing!")
   end
 
   # Lane สำหรับ preprod branch  
   lane :deploy_preprod do
-    gradle(
-      task: "bundle",
-      build_type: "Release"
-    )
-    
-    upload_to_play_store(
+    build_and_deploy(
       track: 'alpha',
-      json_key: "google-play-key.json",
-      aab: "app/build/outputs/bundle/release/app-release.aab",
-      release_status: 'completed',
-      package_name: "test.cicd.appibc"
+      release_status: 'completed'
     )
     
-    slack(
-      message: "🚀 Android Pre-production build deployed to Play Store Alpha!",
-      channel: "#releases"
-    ) if ENV["SLACK_URL"]
+    notify_slack("🚀 Android Pre-production build deployed to Alpha!")
   end
 
   # Lane สำหรับ master branch (Production)
   lane :deploy_master do
-    gradle(
-      task: "bundle", 
-      build_type: "Release"
-    )
-    
-    upload_to_play_store(
+    build_and_deploy(
       track: 'production',
-      json_key: "google-play-key.json",
-      aab: "app/build/outputs/bundle/release/app-release.aab",
       release_status: 'completed',
-      rollout: '0.1', # เริ่มต้นด้วย 10% rollout
-      package_name: "test.cicd.appibc"
+      rollout: '0.1'  # 10% rollout
     )
     
-    slack(
-      message: "🎉 Android Production build deployed to Play Store with 10% rollout!",
-      channel: "#releases"
-    ) if ENV["SLACK_URL"]
+    notify_slack("🎉 Android Production build deployed with 10% rollout!")
   end
 
-  # Lane สำหรับ build เฉยๆ (ไม่ deploy)
+  # Lane สำหรับ build เฉยๆ
   lane :build_only do
     gradle(
       task: "bundle",
@@ -75,33 +46,34 @@ platform :android do
     )
   end
 
-  # Lane สำหรับ promote rollout (สำหรับ production)
-  lane :promote_production do |options|
-    percentage = options[:percentage] || 0.5
-    
-    upload_to_play_store(
-      track: 'production',
-      json_key: "google-play-key.json",
-      rollout: percentage,
-      skip_upload_aab: true,
-      skip_upload_metadata: true,
-      skip_upload_images: true,
-      skip_upload_screenshots: true,
-      package_name: "test.cicd.appibc"
+  # Private lanes
+  private_lane :build_and_deploy do |options|
+    gradle(
+      task: "bundle",
+      build_type: "Release"
     )
     
-    slack(
-      message: "📈 Android Production rollout increased to #{(percentage * 100).to_i}%!",
-      channel: "#releases" 
-    ) if ENV["SLACK_URL"]
+    upload_to_play_store(
+      track: options[:track],
+      json_key: "google-play-key.json",
+      aab: "app/build/outputs/bundle/release/app-release.aab",
+      release_status: options[:release_status],
+      rollout: options[:rollout],
+      package_name: "test.cicd.appibc"
+    )
+  end
+
+  private_lane :notify_slack do |message|
+    if ENV["SLACK_URL"]
+      slack(
+        message: message,
+        channel: "#releases"
+      )
+    end
   end
 
   # Error handling
   error do |lane, exception|
-    slack(
-      message: "❌ Android deployment failed in lane '#{lane}': #{exception.message}",
-      channel: "#releases",
-      success: false
-    ) if ENV["SLACK_URL"]
+    notify_slack("❌ Android deployment failed in lane '#{lane}': #{exception.message}")
   end
 end
