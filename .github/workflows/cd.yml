@@ -128,5 +128,6 @@ jobs:
       environment: 'release'
       publish: true
       version: ${{ needs.setup-and-test.outputs.version }}
+      version_code: ${{ needs.setup-and-test.outputs.version_code }}
       branch: ${{ needs.setup-and-test.outputs.branch }}
     secrets: inherit
