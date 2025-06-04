@@ -1,4 +1,4 @@
-# ios/fastlane/Fastfile - Updated with auto version management
+# ios/fastlane/Fastfile - Updated with API key object fix
 default_platform(:ios)
 
 platform :ios do
@@ -127,6 +127,7 @@ platform :ios do
     # notify_slack("🚀 iOS Pre-production build uploaded to TestFlight Beta!")
   end
 
+  # 🔧 แก้ไข: deploy_master ใช้ API key object
   lane :deploy_master do
     UI.message("🎉 Deploying to App Store...")
     setup_certificates
@@ -141,9 +142,36 @@ platform :ios do
       precheck_include_in_app_purchases: false
     }
     
-    # เพิ่ม API key ถ้ามี
-    if ENV['APP_STORE_CONNECT_API_KEY_PATH'] && File.exist?(ENV['APP_STORE_CONNECT_API_KEY_PATH'])
-      upload_options[:api_key_path] = ENV['APP_STORE_CONNECT_API_KEY_PATH']
+    # ✅ ใช้ API key object แทน path
+    api_key_id = ENV['APP_STORE_CONNECT_API_KEY_ID']
+    api_issuer_id = ENV['APP_STORE_CONNECT_API_ISSUER_ID']
+    api_key_content_base64 = ENV['APP_STORE_CONNECT_API_KEY_CONTENT']
+    
+    if api_key_id && api_issuer_id && api_key_content_base64
+      begin
+        require 'base64'
+        api_key_content = Base64.decode64(api_key_content_base64)
+        
+        UI.message("✅ Creating App Store Connect API configuration for App Store")
+        UI.message("   Key ID: #{api_key_id}")
+        UI.message("   Issuer ID: #{api_issuer_id}")
+        
+        app_store_connect_api_key = {
+          key_id: api_key_id,
+          issuer_id: api_issuer_id,
+          key: api_key_content,
+          duration: 1200,
+          in_house: false
+        }
+        
+        upload_options[:api_key] = app_store_connect_api_key
+        UI.success("✅ Using API key for App Store upload")
+      rescue => e
+        UI.error("❌ API key setup failed: #{e.message}")
+        UI.message("⚠️ Falling back to traditional auth")
+      end
+    else
+      UI.message("⚠️ API key not available for App Store upload, using traditional auth")
     end
     
     upload_to_app_store(upload_options)
@@ -168,40 +196,44 @@ platform :ios do
       submission_information: submission_info
     }
     
-    # เพิ่ม API key ถ้ามี
-    if ENV['APP_STORE_CONNECT_API_KEY_PATH'] && File.exist?(ENV['APP_STORE_CONNECT_API_KEY_PATH'])
-      upload_options[:api_key_path] = ENV['APP_STORE_CONNECT_API_KEY_PATH']
+    # ✅ ใช้ API key object แทน path
+    api_key_id = ENV['APP_STORE_CONNECT_API_KEY_ID']
+    api_issuer_id = ENV['APP_STORE_CONNECT_API_ISSUER_ID']
+    api_key_content_base64 = ENV['APP_STORE_CONNECT_API_KEY_CONTENT']
+    
+    if api_key_id && api_issuer_id && api_key_content_base64
+      begin
+        require 'base64'
+        api_key_content = Base64.decode64(api_key_content_base64)
+        
+        app_store_connect_api_key = {
+          key_id: api_key_id,
+          issuer_id: api_issuer_id,
+          key: api_key_content,
+          duration: 1200,
+          in_house: false
+        }
+        
+        upload_options[:api_key] = app_store_connect_api_key
+        UI.success("✅ Using API key for App Store review submission")
+      rescue => e
+        UI.error("❌ API key setup failed: #{e.message}")
+      end
     end
     
     upload_to_app_store(upload_options)
     # notify_slack("📋 iOS app submitted for App Store review!")
   end
 
-  # ปรับปรุงเวอร์ชั่น - แข็งแกร่งและครอบคลุมมากขึ้น
+  # 🔧 แก้ไข: setup_certificates ไม่ใช้ API key path อีกแล้ว
   private_lane :setup_certificates do
     UI.message("🔐 Setting up certificates...")
     
-    # เช็คว่ามี API key file หรือไม่
-    api_key_path = ENV['APP_STORE_CONNECT_API_KEY_PATH']
-    
-    if api_key_path && File.exist?(api_key_path)
-      UI.message("✅ Using API key: #{api_key_path}")
-      
-      # Setup certificates with API key
-      match(
-        type: "appstore",
-        readonly: true,
-        api_key_path: api_key_path
-      )
-    else
-      UI.message("⚠️ No API key found, using traditional auth")
-      
-      # Setup certificates without API key
-      match(
-        type: "appstore",
-        readonly: true
-      )
-    end
+    # ใช้แค่ Match กับ traditional auth
+    match(
+      type: "appstore",
+      readonly: true
+    )
     
     UI.success("✅ Certificates setup completed")
   end
@@ -224,6 +256,7 @@ platform :ios do
     )
   end
 
+  # 🔧 แก้ไข: build_and_deploy ใช้ API key object
   private_lane :build_and_deploy do |options|
     setup_certificates
     build_release_app
@@ -236,9 +269,46 @@ platform :ios do
       changelog: "Automated build from #{ENV['GITHUB_REF_NAME']} branch"
     }
     
-    # เพิ่ม API key ถ้ามี
-    if ENV['APP_STORE_CONNECT_API_KEY_PATH'] && File.exist?(ENV['APP_STORE_CONNECT_API_KEY_PATH'])
-      upload_options[:api_key_path] = ENV['APP_STORE_CONNECT_API_KEY_PATH']
+    # ✅ ใช้ API key content โดยตรง แทน path
+    api_key_id = ENV['APP_STORE_CONNECT_API_KEY_ID']
+    api_issuer_id = ENV['APP_STORE_CONNECT_API_ISSUER_ID']
+    api_key_content_base64 = ENV['APP_STORE_CONNECT_API_KEY_CONTENT']
+    
+    if api_key_id && api_issuer_id && api_key_content_base64
+      begin
+        # Decode API key content
+        require 'base64'
+        api_key_content = Base64.decode64(api_key_content_base64)
+        
+        UI.message("✅ Creating App Store Connect API configuration for TestFlight")
+        UI.message("   Key ID: #{api_key_id}")
+        UI.message("   Issuer ID: #{api_issuer_id}")
+        UI.message("   Content length: #{api_key_content.length} characters")
+        
+        # สร้าง App Store Connect API object
+        app_store_connect_api_key = {
+          key_id: api_key_id,
+          issuer_id: api_issuer_id,
+          key: api_key_content,
+          duration: 1200, # 20 minutes
+          in_house: false
+        }
+        
+        upload_options[:api_key] = app_store_connect_api_key
+        UI.success("✅ Using App Store Connect API for TestFlight upload")
+        
+      rescue => e
+        UI.error("❌ Failed to setup API key: #{e.message}")
+        UI.error("   Error class: #{e.class}")
+        UI.message("⚠️ Falling back to traditional auth")
+      end
+    else
+      UI.message("⚠️ API key not available, using traditional auth")
+      missing_items = []
+      missing_items << "API_KEY_ID" unless api_key_id
+      missing_items << "ISSUER_ID" unless api_issuer_id  
+      missing_items << "KEY_CONTENT" unless api_key_content_base64
+      UI.message("Missing: #{missing_items.join(', ')}")
     end
     
     upload_to_testflight(upload_options)
