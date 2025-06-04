@@ -11,7 +11,7 @@ platform :android do
   lane :deploy_develop do
     build_and_deploy(
       track: 'internal',
-      release_status: 'completed'
+      release_status: 'draft'
     )
     
     notify_slack("🚀 Android Development build deployed to Internal Testing!")
