@@ -92,6 +92,12 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+        storeFile file("./ibusinesskey.jks")
+        storePassword "ibusiness"
+        keyAlias "ibusiness"
+        keyPassword "ibusiness"
+    }
     }
     buildTypes {
         debug {
