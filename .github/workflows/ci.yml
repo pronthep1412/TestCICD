@@ -181,7 +181,6 @@ jobs:
       environment: debug
       publish: false
       version: ${{ needs.test-and-validate.outputs.version }}
-      version_code: "9"
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
     secrets: inherit
 
