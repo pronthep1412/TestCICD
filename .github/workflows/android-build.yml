@@ -1,4 +1,4 @@
-# android-build.yml - Updated with Target Support
+# .github/workflows/android-build.yml - Improved version with proper version handling
 name: "Android Build and Deploy"
 
 on:
@@ -10,21 +10,16 @@ on:
       publish:
         required: false
         type: boolean
-        description: Deploy to stores
         default: false
       version:
-        required: false
+        required: true
         type: string
-        description: App version
+      version_code:
+        required: true
+        type: string
       branch:
-        required: false
+        required: true
         type: string
-        description: Branch name
-      target:
-        required: false
-        type: string
-        description: Deployment target (testing/production)
-        default: 'testing'
     secrets:
       NPM_TOKEN:
         required: true
@@ -42,15 +37,14 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     
-    # Environment protection สำหรับ production
+    # Simple environment logic
     environment: 
-      name: ${{ inputs.target == 'production' && 'production-android' || format('{0}-android', inputs.branch) }}
+      name: ${{ inputs.branch == 'master' && 'production' || inputs.branch }}
     
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Use Node.js 20
         uses: actions/setup-node@v3
@@ -68,87 +62,85 @@ jobs:
           bundler-cache: true
           working-directory: android
 
-      - name: Cache Gradle Wrapper
+      - name: Cache Gradle
         uses: actions/cache@v3
         with:
-          path: ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
-
-      - name: Cache Gradle Dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.gradle/caches
-          key: ${{ runner.os }}-gradle-caches-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-caches-
-
-      - name: Make Gradlew Executable
-        run: cd android && chmod +x ./gradlew
+          path: |
+            ~/.gradle/wrapper
+            ~/.gradle/caches
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
 
       - name: Setup Keystore
         run: |
           echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > android/app/keystore.jks
-
-      - name: Create keystore.properties
-        run: |
           echo "storeFile=keystore.jks" > android/keystore.properties
           echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> android/keystore.properties
           echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/keystore.properties
           echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/keystore.properties
 
-      # Build for Debug (PR testing)
-      - name: Build Android Debug
+      - name: Make Gradlew Executable
+        run: chmod +x android/gradlew
+
+      # ✨ NEW: Update version before building
+      - name: Update App Version
+        run: |
+          cd android
+          echo "Updating version to: ${{ inputs.version }} (code: ${{ inputs.version_code }})"
+          
+          # Update build.gradle with new version
+          sed -i 's/versionName ".*"/versionName "${{ inputs.version }}"/' app/build.gradle
+          sed -i 's/versionCode [0-9]*/versionCode ${{ inputs.version_code }}/' app/build.gradle
+          
+          # Verify the changes
+          echo "Updated build.gradle:"
+          grep -E "(versionName|versionCode)" app/build.gradle
+
+      # Build different configurations
+      - name: Build Debug
         if: inputs.environment == 'debug'
         run: cd android && ./gradlew bundleDebug --no-daemon
 
-      # Build and Deploy for Testing
-      - name: Build and Deploy Android Testing
-        if: inputs.environment == 'release' && inputs.publish == true && inputs.target == 'testing'
-        env:
-          GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
-        run: |
-          cd android
-          # สร้าง Google Play JSON key file
-          echo "$GOOGLE_PLAY_JSON_KEY" | base64 -d > google-play-key.json
-          
-          # เรียก Fastlane สำหรับ testing
-          bundle exec fastlane deploy_${{ inputs.branch }}
-
-      # Build and Deploy for Production  
-      - name: Build and Deploy Android Production
-        if: inputs.environment == 'release' && inputs.publish == true && inputs.target == 'production'
-        env:
-          GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
-        run: |
-          cd android
-          # สร้าง Google Play JSON key file
-          echo "$GOOGLE_PLAY_JSON_KEY" | base64 -d > google-play-key.json
-          
-          # เรียก Fastlane สำหรับ production
-          bundle exec fastlane deploy_master
-
-      # Build only (no deploy)
-      - name: Build Android Release (No Deploy)
-        if: inputs.environment == 'release' && inputs.publish == false
+      - name: Build Release
+        if: inputs.environment == 'release'
         run: cd android && ./gradlew bundleRelease --no-daemon
 
-      # Upload Artifact for non-deploy builds
-      - name: Upload Artifact
+      # Deploy to stores with proper environment variables
+      - name: Deploy to Play Store
+        if: inputs.publish == true
+        env:
+          GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_REF_NAME: ${{ inputs.branch }}
+        run: |
+          cd android
+          echo "$GOOGLE_PLAY_JSON_KEY" | base64 -d > google-play-key.json
+          bundle exec fastlane deploy_${{ inputs.branch }}
+
+      # Upload artifacts for non-deploy builds
+      - name: Upload Build Artifacts
         if: inputs.publish == false
         uses: actions/upload-artifact@v4
         with:
-          name: TestCICD-android-${{ inputs.environment }}-${{ github.run_id }}
+          name: android-${{ inputs.environment }}-${{ inputs.version }}
           path: |
-            android/app/build/outputs/bundle/debug/app-debug.aab
-            android/app/build/outputs/bundle/release/app-release.aab
+            android/app/build/outputs/bundle/debug/*.aab
+            android/app/build/outputs/bundle/release/*.aab
+          retention-days: 7
 
-      # Deployment Summary
+      # Deployment summary
       - name: Deployment Summary
         if: inputs.publish == true
         run: |
+          TRACK="internal"
+          if [ "${{ inputs.branch }}" = "master" ]; then
+            TRACK="production"
+          elif [ "${{ inputs.branch }}" = "preprod" ]; then
+            TRACK="alpha"
+          fi
+          
           echo "## 🤖 Android Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **Version:** ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version Code:** ${{ inputs.version_code }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch:** ${{ inputs.branch }}" >> $GITHUB_STEP_SUMMARY  
-          echo "- **Target:** ${{ inputs.target }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Track:** ${{ inputs.target == 'production' && 'production' || (inputs.branch == 'develop' && 'internal' || 'alpha') }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Track:** $TRACK" >> $GITHUB_STEP_SUMMARY
           echo "- **Status:** ✅ Deployed successfully" >> $GITHUB_STEP_SUMMARY

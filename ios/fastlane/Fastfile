@@ -1,19 +1,212 @@
-# ios/fastlane/Fastfile
+# ios/fastlane/Fastfile - Updated with auto version management
 default_platform(:ios)
 
 platform :ios do
   
   before_all do
     setup_circle_ci if ENV['CI']
+    ensure_bundle_exec
+    auto_update_version if ENV['GITHUB_RUN_NUMBER']
   end
 
-  # Lane สำหรับ develop branch
-  lane :deploy_develop do
-    match(
-      type: "appstore",
-      readonly: true
+  # ✨ เพิ่ม: Auto version management
+  private_lane :auto_update_version do
+    begin
+      # ดึง version จาก package.json
+      package_json_path = File.expand_path('../../package.json')
+      if File.exist?(package_json_path)
+        package_json = JSON.parse(File.read(package_json_path))
+        new_version = package_json['version']
+      else
+        UI.error("package.json not found, using default version")
+        new_version = "1.0.0"
+      end
+      
+      # ใช้ GitHub run number เป็น build number
+      build_number = ENV['GITHUB_RUN_NUMBER'] || "1"
+      branch = ENV['GITHUB_REF_NAME'] || 'develop'
+      
+      # อัพเดท iOS version
+      increment_version_number(
+        version_number: new_version,
+        xcodeproj: "TestCICD.xcodeproj"
+      )
+      
+      increment_build_number(
+        build_number: build_number,
+        xcodeproj: "TestCICD.xcodeproj"
+      )
+      
+      UI.success("✅ Auto updated iOS version:")
+      UI.success("   CFBundleShortVersionString: #{new_version}")
+      UI.success("   CFBundleVersion: #{build_number}")
+      UI.success("   branch: #{branch}")
+      
+    rescue => e
+      UI.error("❌ Failed to auto update version: #{e.message}")
+      UI.error("Continuing with existing version...")
+    end
+  end
+
+  # ✨ เพิ่ม: Manual version management
+  lane :set_version do |options|
+    version = options[:version] || prompt(text: "Enter version (e.g., 1.2.3):")
+    build = options[:build] || prompt(text: "Enter build number (e.g., 123):")
+    
+    increment_version_number(
+      version_number: version,
+      xcodeproj: "TestCICD.xcodeproj"
     )
     
+    increment_build_number(
+      build_number: build,
+      xcodeproj: "TestCICD.xcodeproj"
+    )
+    
+    UI.success("✅ Manually set iOS version:")
+    UI.success("   CFBundleShortVersionString: #{version}")
+    UI.success("   CFBundleVersion: #{build}")
+  end
+
+  lane :bump_version do |options|
+    type = options[:type] || "patch"
+    
+    # อ่าน version ปัจจุบัน
+    current_version = get_version_number(xcodeproj: "TestCICD.xcodeproj")
+    current_build = get_build_number(xcodeproj: "TestCICD.xcodeproj").to_i
+    
+    # Parse semantic version
+    version_parts = current_version.split('.').map(&:to_i)
+    
+    case type
+    when "major"
+      version_parts[0] += 1
+      version_parts[1] = 0
+      version_parts[2] = 0
+    when "minor"
+      version_parts[1] += 1
+      version_parts[2] = 0
+    when "patch"
+      version_parts[2] += 1
+    end
+    
+    new_version = version_parts.join('.')
+    new_build = current_build + 1
+    
+    increment_version_number(
+      version_number: new_version,
+      xcodeproj: "TestCICD.xcodeproj"
+    )
+    
+    increment_build_number(
+      build_number: new_build.to_s,
+      xcodeproj: "TestCICD.xcodeproj"
+    )
+    
+    UI.success("✅ Bumped #{type} version:")
+    UI.success("   #{current_version} -> #{new_version}")
+    UI.success("   build: #{current_build} -> #{new_build}")
+  end
+
+  # 🚀 Deployment lanes (เดิม + ปรับปรุง)
+  lane :deploy_develop do
+    UI.message("🚀 Deploying to TestFlight Internal...")
+    build_and_deploy(
+      groups: ["Internal Testers", "Developers"],
+      skip_waiting: true
+    )
+    # notify_slack("🚀 iOS Development build uploaded to TestFlight Internal!")
+  end
+
+  lane :deploy_preprod do
+    UI.message("🚀 Deploying to TestFlight Beta...")
+    build_and_deploy(
+      groups: ["Beta Testers", "QA Team"],
+      skip_waiting: false
+    )
+    # notify_slack("🚀 iOS Pre-production build uploaded to TestFlight Beta!")
+  end
+
+  lane :deploy_master do
+    UI.message("🎉 Deploying to App Store...")
+    setup_certificates
+    build_release_app
+    
+    upload_options = {
+      force: true,
+      submit_for_review: false,
+      automatic_release: false,
+      skip_metadata: true,
+      skip_screenshots: true,
+      precheck_include_in_app_purchases: false
+    }
+    
+    # เพิ่ม API key ถ้ามี
+    if ENV['APP_STORE_CONNECT_API_KEY_PATH'] && File.exist?(ENV['APP_STORE_CONNECT_API_KEY_PATH'])
+      upload_options[:api_key_path] = ENV['APP_STORE_CONNECT_API_KEY_PATH']
+    end
+    
+    upload_to_app_store(upload_options)
+    # notify_slack("🎉 iOS Production build uploaded to App Store Connect!")
+  end
+
+  lane :build_only do
+    UI.message("🔨 Building iOS app...")
+    setup_certificates
+    build_release_app
+    UI.success("✅ iOS build completed successfully!")
+  end
+
+  lane :submit_for_review do
+    UI.message("📋 Submitting for App Store review...")
+    
+    upload_options = {
+      skip_binary_upload: true,
+      submit_for_review: true,
+      automatic_release: false,
+      force: true,
+      submission_information: submission_info
+    }
+    
+    # เพิ่ม API key ถ้ามี
+    if ENV['APP_STORE_CONNECT_API_KEY_PATH'] && File.exist?(ENV['APP_STORE_CONNECT_API_KEY_PATH'])
+      upload_options[:api_key_path] = ENV['APP_STORE_CONNECT_API_KEY_PATH']
+    end
+    
+    upload_to_app_store(upload_options)
+    # notify_slack("📋 iOS app submitted for App Store review!")
+  end
+
+  # ปรับปรุงเวอร์ชั่น - แข็งแกร่งและครอบคลุมมากขึ้น
+  private_lane :setup_certificates do
+    UI.message("🔐 Setting up certificates...")
+    
+    # เช็คว่ามี API key file หรือไม่
+    api_key_path = ENV['APP_STORE_CONNECT_API_KEY_PATH']
+    
+    if api_key_path && File.exist?(api_key_path)
+      UI.message("✅ Using API key: #{api_key_path}")
+      
+      # Setup certificates with API key
+      match(
+        type: "appstore",
+        readonly: true,
+        api_key_path: api_key_path
+      )
+    else
+      UI.message("⚠️ No API key found, using traditional auth")
+      
+      # Setup certificates without API key
+      match(
+        type: "appstore",
+        readonly: true
+      )
+    end
+    
+    UI.success("✅ Certificates setup completed")
+  end
+
+  private_lane :build_release_app do
     build_app(
       scheme: "TestCICD",
       workspace: "TestCICD.xcworkspace",
@@ -22,142 +215,76 @@ platform :ios do
       clean: true,
       output_directory: "./build",
       output_name: "TestCICD.ipa",
-      include_bitcode: false 
-    )
-    
-    upload_to_testflight(
-      skip_waiting_for_build_processing: true,
-      groups: ["Internal Testers", "Developers"]
-    )
-    
-    slack(
-      message: "🚀 iOS Development build uploaded to TestFlight!",
-      channel: "#releases"
-    ) if ENV["SLACK_URL"]
-  end
-
-  # Lane สำหรับ preprod branch
-  lane :deploy_preprod do
-    match(
-      type: "appstore", 
-      readonly: true
-    )
-    
-    build_app(
-      scheme: "TestCICD",
-      workspace: "TestCICD.xcworkspace", 
-      configuration: "Release",
-      export_method: "app-store"
-    )
-    
-    upload_to_testflight(
-      skip_waiting_for_build_processing: false,
-      groups: ["Beta Testers", "QA Team"]
-    )
-    
-    slack(
-      message: "🚀 iOS Pre-production build uploaded to TestFlight Beta!",
-      channel: "#releases"
-    ) if ENV["SLACK_URL"]
-  end
-
-  # Lane สำหรับ master branch (Production)
-  lane :deploy_master do
-    match(
-      type: "appstore",
-      readonly: true
-    )
-    
-    build_app(
-      scheme: "TestCICD",
-      workspace: "TestCICD.xcworkspace",
-      configuration: "Release", 
-      export_method: "app-store"
-    )
-    
-    upload_to_app_store(
-      force: true,
-      submit_for_review: true,
-      automatic_release: false, # Manual release after review
-      submission_information: {
-        add_id_info_limits_tracking: true,
-        add_id_info_serves_ads: false,
-        add_id_info_tracks_action: true,
-        add_id_info_tracks_install: true,
-        add_id_info_uses_idfa: true,
-        content_rights_has_rights: true,
-        content_rights_contains_third_party_content: true,
-        export_compliance_platform: 'ios',
-        export_compliance_compliance_required: false,
-        export_compliance_encryption_updated: false,
-        export_compliance_app_type: nil,
-        export_compliance_uses_encryption: false,
-        export_compliance_is_exempt: false,
-        export_compliance_contains_third_party_cryptography: false,
-        export_compliance_contains_proprietary_cryptography: false,
-        export_compliance_available_on_french_store: false
+      include_bitcode: false,
+      export_options: {
+        provisioningProfiles: {
+          "test.cicd.appibc" => "match AppStore test.cicd.appibc"
+        }
       }
     )
-    
-    slack(
-      message: "🎉 iOS Production build submitted to App Store for review!",
-      channel: "#releases"
-    ) if ENV["SLACK_URL"]
   end
 
-  # Lane สำหรับ build เฉยๆ (ไม่ deploy)
-  lane :build_only do
-    match(
-      type: "appstore",
-      readonly: true
-    )
+  private_lane :build_and_deploy do |options|
+    setup_certificates
+    build_release_app
     
-    build_app(
-      scheme: "TestCICD",
-      workspace: "TestCICD.xcworkspace",
-      configuration: "Release",
-      export_method: "app-store",
-      output_directory: "./build",
-      output_name: "TestCICD.ipa"
-    )
+    upload_options = {
+      skip_waiting_for_build_processing: options[:skip_waiting],
+      groups: options[:groups],
+      distribute_external: false,
+      notify_external_testers: false,
+      changelog: "Automated build from #{ENV['GITHUB_REF_NAME']} branch"
+    }
+    
+    # เพิ่ม API key ถ้ามี
+    if ENV['APP_STORE_CONNECT_API_KEY_PATH'] && File.exist?(ENV['APP_STORE_CONNECT_API_KEY_PATH'])
+      upload_options[:api_key_path] = ENV['APP_STORE_CONNECT_API_KEY_PATH']
+    end
+    
+    upload_to_testflight(upload_options)
   end
 
-  # Lane สำหรับ promote จาก TestFlight ไป App Store
-  lane :promote_to_app_store do
-    upload_to_app_store(
-      skip_binary_upload: true,
-      submit_for_review: true,
-      automatic_release: false,
-      force: true
-    )
-    
-    slack(
-      message: "📋 iOS build promoted and submitted for App Store review!",
-      channel: "#releases"
-    ) if ENV["SLACK_URL"]
+  private_lane :submission_info do
+    {
+      add_id_info_limits_tracking: true,
+      add_id_info_serves_ads: false,
+      add_id_info_tracks_action: true,
+      add_id_info_tracks_install: true,
+      add_id_info_uses_idfa: true,
+      content_rights_has_rights: true,
+      content_rights_contains_third_party_content: true,
+      export_compliance_platform: 'ios',
+      export_compliance_compliance_required: false,
+      export_compliance_encryption_updated: false,
+      export_compliance_uses_encryption: false,
+      export_compliance_is_exempt: false,
+      export_compliance_contains_third_party_cryptography: false,
+      export_compliance_contains_proprietary_cryptography: false,
+      export_compliance_available_on_french_store: false
+    }
   end
 
-  # Lane สำหรับ release ทันทีหลัง approve
-  lane :release_approved_build do
-    upload_to_app_store(
-      skip_binary_upload: true,
-      skip_metadata: true,
-      skip_screenshots: true,
-      release_as_automatic: true
-    )
+  private_lane :notify_slack do |message|
+    return unless ENV["SLACK_URL"]
     
-    slack(
-      message: "🎉 iOS app is now live on the App Store!",
-      channel: "#releases"
-    ) if ENV["SLACK_URL"]
+    begin
+      slack(
+        message: message,
+        channel: "#releases",
+        webhook_url: ENV["SLACK_URL"],
+        username: "iOS CI/CD",
+        icon_emoji: ":apple:"
+      )
+    rescue => e
+      UI.error("Failed to send Slack notification: #{e.message}")
+    end
   end
 
   # Error handling
   error do |lane, exception|
-    slack(
-      message: "❌ iOS deployment failed in lane '#{lane}': #{exception.message}",
-      channel: "#releases",
-      success: false
-    ) if ENV["SLACK_URL"]
+    error_message = "❌ iOS deployment failed in lane '#{lane}': #{exception.message}"
+    UI.error(error_message)
+    # notify_slack(error_message) if defined?(notify_slack)
+    raise exception
   end
 end
