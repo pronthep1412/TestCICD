@@ -18,8 +18,7 @@ jobs:
     timeout-minutes: 15
     
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      version_code: ${{ steps.version.outputs.version_code }}
+      pr_version: ${{ steps.version.outputs.version }}
       target_branch: ${{ steps.branch.outputs.name }}
       coverage: ${{ steps.coverage.outputs.percentage }}
       
@@ -48,31 +47,14 @@ jobs:
       - name: Install Dependencies
         run: yarn ci
 
-      - name: Generate Version and Version Code
+      - name: Generate PR Version
         id: version
         run: |
-          BRANCH_NAME=${{ github.ref_name }}
-          PACKAGE_VERSION=$(node -p "require('../../package.json').version")
-          RUN_NUMBER=${{ github.run_number }}
-          
-          # Generate version name
-          if [ "$BRANCH_NAME" = "master" ]; then
-            VERSION="$PACKAGE_VERSION"
-            BASE_CODE=2000000
-          elif [ "$BRANCH_NAME" = "preprod" ]; then
-            VERSION="$PACKAGE_VERSION-beta.$RUN_NUMBER"
-            BASE_CODE=1500000
-          else
-            VERSION="$PACKAGE_VERSION-alpha.$RUN_NUMBER"
-            BASE_CODE=1000000
-          fi
-          
-          # Generate unique version code
-          VERSION_CODE=$((BASE_CODE + RUN_NUMBER))
-          
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
-          echo "Generated version: $VERSION (code: $VERSION_CODE)"
+          PR_NUMBER=${{ github.event.number }}
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          PR_VERSION="$BASE_VERSION-pr.$PR_NUMBER"
+          echo "version=$PR_VERSION" >> $GITHUB_OUTPUT
+          echo "Generated PR version: $PR_VERSION"
 
       - name: Set Target Branch  
         id: branch
@@ -168,8 +150,8 @@ jobs:
     with:
       environment: debug
       publish: false
-      version: ${{ needs.test-and-validate.outputs.version }}
-      version_code: "9"
+      version: ${{ needs.test-and-validate.outputs.pr_version }}
+      version_code: "99"
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
     secrets: inherit
 
@@ -180,8 +162,8 @@ jobs:
     with:
       environment: debug
       publish: false
-      version: ${{ needs.test-and-validate.outputs.version }}
-      version_code: "9"
+      version: ${{ needs.test-and-validate.outputs.pr_version }}
+      version_code: "99"
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
     secrets: inherit
 
@@ -281,7 +263,7 @@ jobs:
       - name: PR Summary (Fixed for No Unit Tests)
         run: |
           echo "## 🚀 Pull Request Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **PR Version:** ${{ needs.test-and-validate.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **PR Version:** ${{ needs.test-and-validate.outputs.pr_version }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Target Branch:** ${{ needs.test-and-validate.outputs.target_branch }}" >> $GITHUB_STEP_SUMMARY
           
           # Handle coverage - แสดงตัวเลขจริง ไม่ใช่ "Unable to determine"
