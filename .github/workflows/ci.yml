@@ -19,6 +19,7 @@ jobs:
     
     outputs:
       pr_version: ${{ steps.version.outputs.version }}
+      pr_version_code: ${{ steps.version.outputs.version_code }}
       target_branch: ${{ steps.branch.outputs.name }}
       coverage: ${{ steps.coverage.outputs.percentage }}
       
@@ -47,14 +48,28 @@ jobs:
       - name: Install Dependencies
         run: yarn ci
 
-      - name: Generate PR Version
+      - name: Generate PR Version and Version Code
         id: version
         run: |
           PR_NUMBER=${{ github.event.number }}
           BASE_VERSION=$(node -p "require('./package.json').version")
           PR_VERSION="$BASE_VERSION-pr.$PR_NUMBER"
+          
+          # Set the base code depending on the branch
+          if [ "${{ github.base_ref }}" == "master" ]; then
+            BASE_CODE=2000000
+          elif [ "${{ github.base_ref }}" == "preprod" ]; then
+            BASE_CODE=1500000
+          else
+            BASE_CODE=1000000
+          fi
+          
+          # Calculate version code dynamically
+          VERSION_CODE=$((BASE_CODE + PR_NUMBER))
+          
           echo "version=$PR_VERSION" >> $GITHUB_OUTPUT
-          echo "Generated PR version: $PR_VERSION"
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "Generated PR version: $PR_VERSION (code: $VERSION_CODE)"
 
       - name: Set Target Branch  
         id: branch
@@ -151,6 +166,7 @@ jobs:
       environment: debug
       publish: false
       version: ${{ needs.test-and-validate.outputs.pr_version }}
+      version_code: ${{ needs.test-and-validate.outputs.pr_version_code }}
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
     secrets: inherit
 
@@ -162,6 +178,7 @@ jobs:
       environment: debug
       publish: false
       version: ${{ needs.test-and-validate.outputs.pr_version }}
+      version_code: ${{ needs.test-and-validate.outputs.pr_version_code }}
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
     secrets: inherit
 
