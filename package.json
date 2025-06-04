@@ -1,6 +1,6 @@
 {
   "name": "TestCICD",
-  "version": "0.0.48",
+  "version": "0.0.49",
   "private": true,
   "scripts": {
     "preci": "rm -fr node_modules",
