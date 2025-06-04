@@ -1,0 +1,163 @@
+# ios/fastlane/Fastfile
+default_platform(:ios)
+
+platform :ios do
+  
+  before_all do
+    setup_circle_ci if ENV['CI']
+  end
+
+  # Lane สำหรับ develop branch
+  lane :deploy_develop do
+    match(
+      type: "appstore",
+      readonly: true
+    )
+    
+    build_app(
+      scheme: "TestCICD",
+      workspace: "TestCICD.xcworkspace",
+      configuration: "Release",
+      export_method: "app-store",
+      clean: true,
+      output_directory: "./build",
+      output_name: "TestCICD.ipa",
+      include_bitcode: false 
+    )
+    
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true,
+      groups: ["Internal Testers", "Developers"]
+    )
+    
+    slack(
+      message: "🚀 iOS Development build uploaded to TestFlight!",
+      channel: "#releases"
+    ) if ENV["SLACK_URL"]
+  end
+
+  # Lane สำหรับ preprod branch
+  lane :deploy_preprod do
+    match(
+      type: "appstore", 
+      readonly: true
+    )
+    
+    build_app(
+      scheme: "TestCICD",
+      workspace: "TestCICD.xcworkspace", 
+      configuration: "Release",
+      export_method: "app-store"
+    )
+    
+    upload_to_testflight(
+      skip_waiting_for_build_processing: false,
+      groups: ["Beta Testers", "QA Team"]
+    )
+    
+    slack(
+      message: "🚀 iOS Pre-production build uploaded to TestFlight Beta!",
+      channel: "#releases"
+    ) if ENV["SLACK_URL"]
+  end
+
+  # Lane สำหรับ master branch (Production)
+  lane :deploy_master do
+    match(
+      type: "appstore",
+      readonly: true
+    )
+    
+    build_app(
+      scheme: "TestCICD",
+      workspace: "TestCICD.xcworkspace",
+      configuration: "Release", 
+      export_method: "app-store"
+    )
+    
+    upload_to_app_store(
+      force: true,
+      submit_for_review: true,
+      automatic_release: false, # Manual release after review
+      submission_information: {
+        add_id_info_limits_tracking: true,
+        add_id_info_serves_ads: false,
+        add_id_info_tracks_action: true,
+        add_id_info_tracks_install: true,
+        add_id_info_uses_idfa: true,
+        content_rights_has_rights: true,
+        content_rights_contains_third_party_content: true,
+        export_compliance_platform: 'ios',
+        export_compliance_compliance_required: false,
+        export_compliance_encryption_updated: false,
+        export_compliance_app_type: nil,
+        export_compliance_uses_encryption: false,
+        export_compliance_is_exempt: false,
+        export_compliance_contains_third_party_cryptography: false,
+        export_compliance_contains_proprietary_cryptography: false,
+        export_compliance_available_on_french_store: false
+      }
+    )
+    
+    slack(
+      message: "🎉 iOS Production build submitted to App Store for review!",
+      channel: "#releases"
+    ) if ENV["SLACK_URL"]
+  end
+
+  # Lane สำหรับ build เฉยๆ (ไม่ deploy)
+  lane :build_only do
+    match(
+      type: "appstore",
+      readonly: true
+    )
+    
+    build_app(
+      scheme: "TestCICD",
+      workspace: "TestCICD.xcworkspace",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "./build",
+      output_name: "TestCICD.ipa"
+    )
+  end
+
+  # Lane สำหรับ promote จาก TestFlight ไป App Store
+  lane :promote_to_app_store do
+    upload_to_app_store(
+      skip_binary_upload: true,
+      submit_for_review: true,
+      automatic_release: false,
+      force: true
+    )
+    
+    slack(
+      message: "📋 iOS build promoted and submitted for App Store review!",
+      channel: "#releases"
+    ) if ENV["SLACK_URL"]
+  end
+
+  # Lane สำหรับ release ทันทีหลัง approve
+  lane :release_approved_build do
+    upload_to_app_store(
+      skip_binary_upload: true,
+      skip_metadata: true,
+      skip_screenshots: true,
+      release_as_automatic: true
+    )
+    
+    slack(
+      message: "🎉 iOS app is now live on the App Store!",
+      channel: "#releases"
+    ) if ENV["SLACK_URL"]
+  end
+
+  # Error handling
+  error do |lane, exception|
+    slack(
+      message: "❌ iOS deployment failed in lane '#{lane}': #{exception.message}",
+      channel: "#releases",
+      success: false
+    ) if ENV["SLACK_URL"]
+  end
+end

@@ -1,0 +1,13 @@
+git_url("git@github.com:IBCHUB/ios-certificates.git")  # ใส่ URL repo ที่สร้างไว้
+
+storage_mode("git")               # ใช้ git เก็บ
+
+app_identifier(["test.cicd.appibc"])  # เปลี่ยนเป็น Bundle ID ของแอปคุณ
+
+username("dev3@ibusiness.co.th")  # Apple ID ของคุณ
+
+team_id("8MBHTZFZWC")           # Apple Developer Team ID (ดูใน developer.apple.com)
+
+type("development")                 # ค่าเริ่มต้น ประเภท provisioning profile (appstore, development, adhoc)
+
+skip_confirmation(true)          # ไม่ต้องถามตอนรันคำสั่ง
