@@ -19,9 +19,9 @@ jobs:
     
     outputs:
       pr_version: ${{ steps.version.outputs.version }}
-      version_code: ${{ steps.version.outputs.version_code }}
       target_branch: ${{ steps.branch.outputs.name }}
       coverage: ${{ steps.coverage.outputs.percentage }}
+      version_code: ${{ steps.version.outputs.version_code }}
       
     steps:
       - name: Checkout
@@ -54,11 +54,18 @@ jobs:
           PR_NUMBER=${{ github.event.number }}
           BASE_VERSION=$(node -p "require('./package.json').version")
           PR_VERSION="$BASE_VERSION-pr.$PR_NUMBER"
+          RUN_NUMBER=${{ github.run_number }}
           
-          # Generate version code (timestamp + PR number for uniqueness)
-          TIMESTAMP=$(date +%s)
-          VERSION_CODE="${TIMESTAMP}${PR_NUMBER}"
-          
+          # Generate version code like in cd.yml
+          if [ "$GITHUB_REF_NAME" = "master" ]; then
+            BASE_CODE=2000000
+          elif [ "$GITHUB_REF_NAME" = "preprod" ]; then
+            BASE_CODE=1500000
+          else
+            BASE_CODE=1000000
+          fi
+          VERSION_CODE=$((BASE_CODE + RUN_NUMBER))
+
           echo "version=$PR_VERSION" >> $GITHUB_OUTPUT
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Generated PR version: $PR_VERSION"
@@ -159,8 +166,6 @@ jobs:
       environment: debug
       publish: false
       version: ${{ needs.test-and-validate.outputs.pr_version }}
-      # Remove version_code if android-build.yml doesn't accept it
-      # version_code: ${{ needs.test-and-validate.outputs.version_code }}
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
     secrets: inherit
 
@@ -172,8 +177,6 @@ jobs:
       environment: debug
       publish: false
       version: ${{ needs.test-and-validate.outputs.pr_version }}
-      # Remove version_code if ios-build.yml doesn't accept it
-      # version_code: ${{ needs.test-and-validate.outputs.version_code }}
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
     secrets: inherit
 
@@ -274,7 +277,6 @@ jobs:
         run: |
           echo "## 🚀 Pull Request Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **PR Version:** ${{ needs.test-and-validate.outputs.pr_version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version Code:** ${{ needs.test-and-validate.outputs.version_code }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Target Branch:** ${{ needs.test-and-validate.outputs.target_branch }}" >> $GITHUB_STEP_SUMMARY
           
           # Handle coverage - แสดงตัวเลขจริง ไม่ใช่ "Unable to determine"
