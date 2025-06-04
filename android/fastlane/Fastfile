@@ -1,79 +1,205 @@
-# android/fastlane/Fastfile - Improved version
+# android/fastlane/Fastfile - Updated with auto version management
 default_platform(:android)
 
 platform :android do
   
   before_all do
     ensure_bundle_exec
+    auto_update_version if ENV['GITHUB_RUN_NUMBER']
   end
 
-  # Lane สำหรับ develop branch
+  # ✨ เพิ่ม: Auto version management
+  private_lane :auto_update_version do
+    begin
+      # ดึง version จาก package.json
+      package_json_path = File.expand_path('../package.json')
+      if File.exist?(package_json_path)
+        package_json = JSON.parse(File.read(package_json_path))
+        new_version = package_json['version']
+      else
+        UI.error("package.json not found, using default version")
+        new_version = "1.0.0"
+      end
+      
+      # สร้าง unique versionCode จาก GitHub environment
+      run_number = ENV['GITHUB_RUN_NUMBER'] ? ENV['GITHUB_RUN_NUMBER'].to_i : 1
+      branch = ENV['GITHUB_REF_NAME'] || 'develop'
+      
+      # Base number ตาม branch เพื่อหลีกเลี่ยง version conflict
+      base = case branch
+             when 'master' then 2000000    # Production: 2M+
+             when 'preprod' then 1500000   # PreProd: 1.5M+
+             else 1000000                  # Develop: 1M+
+             end
+      
+      version_code = base + run_number
+      
+      # อัพเดท Android version ใน build.gradle
+      android_set_version_name(
+        version_name: new_version,
+        gradle_file: "app/build.gradle"
+      )
+      
+      android_set_version_code(
+        version_code: version_code,
+        gradle_file: "app/build.gradle"
+      )
+      
+      UI.success("✅ Auto updated Android version:")
+      UI.success("   versionName: #{new_version}")
+      UI.success("   versionCode: #{version_code}")
+      UI.success("   branch: #{branch}")
+      
+    rescue => e
+      UI.error("❌ Failed to auto update version: #{e.message}")
+      UI.error("Continuing with existing version...")
+    end
+  end
+
+  # ✨ เพิ่ม: Manual version management lanes
+  lane :set_version do |options|
+    version_name = options[:version_name] || prompt(text: "Enter version name (e.g., 1.2.3):")
+    version_code = options[:version_code] || prompt(text: "Enter version code (e.g., 1000123):").to_i
+    
+    android_set_version_name(
+      version_name: version_name,
+      gradle_file: "app/build.gradle"
+    )
+    
+    android_set_version_code(
+      version_code: version_code,
+      gradle_file: "app/build.gradle"
+    )
+    
+    UI.success("✅ Manually set Android version:")
+    UI.success("   versionName: #{version_name}")
+    UI.success("   versionCode: #{version_code}")
+  end
+
+  lane :bump_version do |options|
+    type = options[:type] || "patch"  # patch, minor, major
+    
+    # อ่าน version ปัจจุบันจาก build.gradle
+    current_version = android_get_version_name(gradle_file: "app/build.gradle")
+    current_code = android_get_version_code(gradle_file: "app/build.gradle").to_i
+    
+    # Parse semantic version
+    version_parts = current_version.split('.').map(&:to_i)
+    
+    case type
+    when "major"
+      version_parts[0] += 1
+      version_parts[1] = 0
+      version_parts[2] = 0
+    when "minor"
+      version_parts[1] += 1
+      version_parts[2] = 0
+    when "patch"
+      version_parts[2] += 1
+    end
+    
+    new_version = version_parts.join('.')
+    new_code = current_code + 1
+    
+    android_set_version_name(
+      version_name: new_version,
+      gradle_file: "app/build.gradle"
+    )
+    
+    android_set_version_code(
+      version_code: new_code,
+      gradle_file: "app/build.gradle"
+    )
+    
+    UI.success("✅ Bumped #{type} version:")
+    UI.success("   #{current_version} -> #{new_version}")
+    UI.success("   versionCode: #{current_code} -> #{new_code}")
+  end
+
+  # 🚀 Deployment lanes (เดิม + ปรับปรุง)
   lane :deploy_develop do
+    UI.message("🚀 Deploying to Internal Testing...")
     build_and_deploy(
       track: 'internal',
       release_status: 'draft'
     )
-    
     notify_slack("🚀 Android Development build deployed to Internal Testing!")
   end
 
-  # Lane สำหรับ preprod branch  
   lane :deploy_preprod do
+    UI.message("🚀 Deploying to Alpha Testing...")
     build_and_deploy(
       track: 'alpha',
       release_status: 'completed'
     )
-    
     notify_slack("🚀 Android Pre-production build deployed to Alpha!")
   end
 
-  # Lane สำหรับ master branch (Production)
   lane :deploy_master do
+    UI.message("🎉 Deploying to Production...")
     build_and_deploy(
       track: 'production',
       release_status: 'completed',
-      rollout: '0.1'  # 10% rollout
+      rollout: '0.1'  # 10% rollout for safety
     )
-    
     notify_slack("🎉 Android Production build deployed with 10% rollout!")
   end
 
-  # Lane สำหรับ build เฉยๆ
   lane :build_only do
+    UI.message("🔨 Building release bundle...")
     gradle(
-      task: "bundle",
-      build_type: "Release"
+      task: "clean bundleRelease",
+      print_command: false
     )
+    UI.success("✅ Build completed successfully!")
   end
 
-  # Private lanes
+  # 🔧 Private lanes
   private_lane :build_and_deploy do |options|
+    # Clean และ build
     gradle(
-      task: "bundle",
-      build_type: "Release"
+      task: "clean bundleRelease",
+      print_command: false
     )
     
+    # Upload to Play Store
     upload_to_play_store(
       track: options[:track],
       json_key: "google-play-key.json",
       aab: "app/build/outputs/bundle/release/app-release.aab",
       release_status: options[:release_status],
       rollout: options[:rollout],
-      package_name: "test.cicd.appibc"
+      package_name: "test.cicd.appibc",
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      timeout: 300
     )
+    
+    UI.success("✅ Successfully uploaded to #{options[:track]} track!")
   end
 
   private_lane :notify_slack do |message|
-    if ENV["SLACK_URL"]
+    return unless ENV["SLACK_URL"]
+    
+    begin
       slack(
         message: message,
-        channel: "#releases"
+        channel: "#releases",
+        webhook_url: ENV["SLACK_URL"],
+        username: "Android CI/CD",
+        icon_emoji: ":robot_face:"
       )
+    rescue => e
+      UI.error("Failed to send Slack notification: #{e.message}")
     end
   end
 
   # Error handling
   error do |lane, exception|
-    notify_slack("❌ Android deployment failed in lane '#{lane}': #{exception.message}")
+    error_message = "❌ Android deployment failed in lane '#{lane}': #{exception.message}"
+    UI.error(error_message)
+    notify_slack(error_message) if defined?(notify_slack)
+    raise exception
   end
 end
