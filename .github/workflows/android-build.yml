@@ -14,9 +14,6 @@ on:
       version:
         required: true
         type: string
-      version_code:
-        required: true
-        type: string
       branch:
         required: true
         type: string
