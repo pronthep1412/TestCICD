@@ -1,4 +1,4 @@
-# ios/fastlane/Fastfile - Updated with auto version management
+# ios/fastlane/Fastfile - Fixed version with better error handling
 default_platform(:ios)
 
 platform :ios do
@@ -9,10 +9,9 @@ platform :ios do
     auto_update_version if ENV['GITHUB_RUN_NUMBER']
   end
 
-  # ✨ เพิ่ม: Auto version management
+  # ✨ Auto version management
   private_lane :auto_update_version do
     begin
-      # ดึง version จาก package.json
       package_json_path = File.expand_path('../../package.json')
       if File.exist?(package_json_path)
         package_json = JSON.parse(File.read(package_json_path))
@@ -22,11 +21,9 @@ platform :ios do
         new_version = "1.0.0"
       end
       
-      # ใช้ GitHub run number เป็น build number
       build_number = ENV['GITHUB_RUN_NUMBER'] || "1"
       branch = ENV['GITHUB_REF_NAME'] || 'develop'
       
-      # อัพเดท iOS version
       increment_version_number(
         version_number: new_version,
         xcodeproj: "TestCICD.xcodeproj"
@@ -48,7 +45,7 @@ platform :ios do
     end
   end
 
-  # ✨ เพิ่ม: Manual version management
+  # Manual version management
   lane :set_version do |options|
     version = options[:version] || prompt(text: "Enter version (e.g., 1.2.3):")
     build = options[:build] || prompt(text: "Enter build number (e.g., 123):")
@@ -70,12 +67,9 @@ platform :ios do
 
   lane :bump_version do |options|
     type = options[:type] || "patch"
-    
-    # อ่าน version ปัจจุบัน
     current_version = get_version_number(xcodeproj: "TestCICD.xcodeproj")
     current_build = get_build_number(xcodeproj: "TestCICD.xcodeproj").to_i
     
-    # Parse semantic version
     version_parts = current_version.split('.').map(&:to_i)
     
     case type
@@ -108,14 +102,13 @@ platform :ios do
     UI.success("   build: #{current_build} -> #{new_build}")
   end
 
-  # 🚀 Deployment lanes (เดิม + ปรับปรุง)
+  # 🔧 ปรับปรุง: Deployment lanes with better error handling
   lane :deploy_develop do
     UI.message("🚀 Deploying to TestFlight Internal...")
     build_and_deploy(
       groups: ["Internal Testers", "Developers"],
       skip_waiting: true
     )
-    # notify_slack("🚀 iOS Development build uploaded to TestFlight Internal!")
   end
 
   lane :deploy_preprod do
@@ -124,7 +117,6 @@ platform :ios do
       groups: ["Beta Testers", "QA Team"],
       skip_waiting: false
     )
-    # notify_slack("🚀 iOS Pre-production build uploaded to TestFlight Beta!")
   end
 
   lane :deploy_master do
@@ -132,22 +124,14 @@ platform :ios do
     setup_certificates
     build_release_app
     
-    upload_options = {
-      force: true,
+    # 🔧 ปรับปรุง: Better API key handling
+    upload_options = build_upload_options(
       submit_for_review: false,
-      automatic_release: false,
       skip_metadata: true,
-      skip_screenshots: true,
-      precheck_include_in_app_purchases: false
-    }
-    
-    # เพิ่ม API key ถ้ามี
-    if ENV['APP_STORE_CONNECT_API_KEY_PATH'] && File.exist?(ENV['APP_STORE_CONNECT_API_KEY_PATH'])
-      upload_options[:api_key_path] = ENV['APP_STORE_CONNECT_API_KEY_PATH']
-    end
+      skip_screenshots: true
+    )
     
     upload_to_app_store(upload_options)
-    # notify_slack("🎉 iOS Production build uploaded to App Store Connect!")
   end
 
   lane :build_only do
@@ -160,43 +144,34 @@ platform :ios do
   lane :submit_for_review do
     UI.message("📋 Submitting for App Store review...")
     
-    upload_options = {
+    upload_options = build_upload_options(
       skip_binary_upload: true,
       submit_for_review: true,
-      automatic_release: false,
-      force: true,
       submission_information: submission_info
-    }
-    
-    # เพิ่ม API key ถ้ามี
-    if ENV['APP_STORE_CONNECT_API_KEY_PATH'] && File.exist?(ENV['APP_STORE_CONNECT_API_KEY_PATH'])
-      upload_options[:api_key_path] = ENV['APP_STORE_CONNECT_API_KEY_PATH']
-    end
+    )
     
     upload_to_app_store(upload_options)
-    # notify_slack("📋 iOS app submitted for App Store review!")
   end
 
-  # ปรับปรุงเวอร์ชั่น - แข็งแกร่งและครอบคลุมมากขึ้น
+  # 🔧 ปรับปรุง: Enhanced certificate setup with better error handling
   private_lane :setup_certificates do
     UI.message("🔐 Setting up certificates...")
     
-    # เช็คว่ามี API key file หรือไม่
     api_key_path = ENV['APP_STORE_CONNECT_API_KEY_PATH']
     
-    if api_key_path && File.exist?(api_key_path)
+    # Validate API key before proceeding
+    if api_key_path && validate_api_key(api_key_path)
       UI.message("✅ Using API key: #{api_key_path}")
       
-      # Setup certificates with API key
       match(
         type: "appstore",
         readonly: true,
         api_key_path: api_key_path
       )
     else
-      UI.message("⚠️ No API key found, using traditional auth")
+      UI.message("⚠️ API key validation failed, using traditional auth")
       
-      # Setup certificates without API key
+      # Fallback to traditional authentication
       match(
         type: "appstore",
         readonly: true
@@ -204,6 +179,87 @@ platform :ios do
     end
     
     UI.success("✅ Certificates setup completed")
+  end
+
+  # 🆕 เพิ่ม: API key validation function
+  private_lane :validate_api_key do |api_key_path|
+    begin
+      unless api_key_path && !api_key_path.empty?
+        UI.error("❌ API key path is empty")
+        return false
+      end
+      
+      unless File.exist?(api_key_path)
+        UI.error("❌ API key file not found at: #{api_key_path}")
+        return false
+      end
+      
+      file_content = File.read(api_key_path)
+      
+      # Check file size
+      if file_content.length < 100
+        UI.error("❌ API key file too small (#{file_content.length} bytes)")
+        return false
+      end
+      
+      # Check format
+      unless file_content.start_with?("-----BEGIN PRIVATE KEY-----")
+        UI.error("❌ Invalid API key format")
+        UI.error("Expected: -----BEGIN PRIVATE KEY-----")
+        UI.error("Found: #{file_content[0..30]}...")
+        return false
+      end
+      
+      unless file_content.include?("-----END PRIVATE KEY-----")
+        UI.error("❌ API key file incomplete - missing end marker")
+        return false
+      end
+      
+      # Validate required environment variables
+      api_key_id = ENV['APP_STORE_CONNECT_API_KEY_ID']
+      issuer_id = ENV['APP_STORE_CONNECT_API_ISSUER_ID']
+      
+      if api_key_id.nil? || api_key_id.empty?
+        UI.error("❌ APP_STORE_CONNECT_API_KEY_ID is missing")
+        return false
+      end
+      
+      if issuer_id.nil? || issuer_id.empty?
+        UI.error("❌ APP_STORE_CONNECT_API_ISSUER_ID is missing")
+        return false
+      end
+      
+      UI.success("✅ API key validation passed")
+      UI.message("   📋 Key ID: #{api_key_id}")
+      UI.message("   📋 Issuer ID: #{issuer_id}")
+      UI.message("   📄 File size: #{file_content.length} bytes")
+      
+      return true
+      
+    rescue => e
+      UI.error("❌ API key validation error: #{e.message}")
+      return false
+    end
+  end
+
+  # 🆕 เพิ่ม: Build upload options with API key handling
+  private_lane :build_upload_options do |base_options = {}|
+    options = {
+      force: true,
+      automatic_release: false,
+      precheck_include_in_app_purchases: false
+    }.merge(base_options)
+    
+    # Add API key if available and valid
+    api_key_path = ENV['APP_STORE_CONNECT_API_KEY_PATH']
+    if api_key_path && validate_api_key(api_key_path)
+      options[:api_key_path] = api_key_path
+      UI.message("✅ Using API key authentication")
+    else
+      UI.message("⚠️ Using traditional authentication (username/password)")
+    end
+    
+    return options
   end
 
   private_lane :build_release_app do
@@ -224,6 +280,7 @@ platform :ios do
     )
   end
 
+  # 🔧 ปรับปรุง: Enhanced build_and_deploy with better error handling
   private_lane :build_and_deploy do |options|
     setup_certificates
     build_release_app
@@ -236,9 +293,13 @@ platform :ios do
       changelog: "Automated build from #{ENV['GITHUB_REF_NAME']} branch"
     }
     
-    # เพิ่ม API key ถ้ามี
-    if ENV['APP_STORE_CONNECT_API_KEY_PATH'] && File.exist?(ENV['APP_STORE_CONNECT_API_KEY_PATH'])
-      upload_options[:api_key_path] = ENV['APP_STORE_CONNECT_API_KEY_PATH']
+    # Add API key if available and valid
+    api_key_path = ENV['APP_STORE_CONNECT_API_KEY_PATH']
+    if api_key_path && validate_api_key(api_key_path)
+      upload_options[:api_key_path] = api_key_path
+      UI.message("✅ Using API key for TestFlight upload")
+    else
+      UI.message("⚠️ Using traditional authentication for TestFlight upload")
     end
     
     upload_to_testflight(upload_options)
@@ -280,11 +341,32 @@ platform :ios do
     end
   end
 
-  # Error handling
+  # Enhanced error handling
   error do |lane, exception|
     error_message = "❌ iOS deployment failed in lane '#{lane}': #{exception.message}"
     UI.error(error_message)
-    # notify_slack(error_message) if defined?(notify_slack)
+    UI.error("Stack trace: #{exception.backtrace.join("\n")}")
+    
+    # Additional debugging info
+    if lane.to_s.include?('deploy') || lane.to_s.include?('upload')
+      UI.error("🔍 Debugging information:")
+      UI.error("   API Key Path: #{ENV['APP_STORE_CONNECT_API_KEY_PATH']}")
+      UI.error("   API Key ID: #{ENV['APP_STORE_CONNECT_API_KEY_ID']}")
+      UI.error("   Issuer ID: #{ENV['APP_STORE_CONNECT_API_ISSUER_ID']}")
+      
+      api_key_path = ENV['APP_STORE_CONNECT_API_KEY_PATH']
+      if api_key_path && File.exist?(api_key_path)
+        file_size = File.size(api_key_path)
+        UI.error("   API Key file exists: #{file_size} bytes")
+        
+        # Show first few characters for debugging (safely)
+        content_preview = File.read(api_key_path, 50)
+        UI.error("   File starts with: #{content_preview}")
+      else
+        UI.error("   API Key file: NOT FOUND")
+      end
+    end
+    
     raise exception
   end
 end
