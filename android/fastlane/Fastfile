@@ -12,7 +12,7 @@ platform :android do
   private_lane :auto_update_version do
     begin
       # ดึง version จาก package.json
-      package_json_path = File.expand_path('../package.json')
+      package_json_path = File.expand_path('../../package.json')
       if File.exist?(package_json_path)
         package_json = JSON.parse(File.read(package_json_path))
         new_version = package_json['version']

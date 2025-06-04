@@ -13,7 +13,7 @@ platform :ios do
   private_lane :auto_update_version do
     begin
       # ดึง version จาก package.json
-      package_json_path = File.expand_path('../package.json')
+      package_json_path = File.expand_path('../../package.json')
       if File.exist?(package_json_path)
         package_json = JSON.parse(File.read(package_json_path))
         new_version = package_json['version']
@@ -165,25 +165,124 @@ platform :ios do
     notify_slack("📋 iOS app submitted for App Store review!")
   end
 
-  # 🔧 Private lanes (เดิม + ปรับปรุง)
+  # ปรับปรุงเวอร์ชั่น - แข็งแกร่งและครอบคลุมมากขึ้น
   private_lane :setup_certificates do
-    if ENV['APP_STORE_CONNECT_API_KEY_PATH'] && File.exist?(ENV['APP_STORE_CONNECT_API_KEY_PATH'])
-      UI.success("Using App Store Connect API Key authentication")
+    begin
+      # เพิ่ม require สำหรับ Base64 (บาง environment อาจไม่มี)
+      require 'base64'
       
-      app_store_connect_api_key(
-        key_id: ENV['APP_STORE_CONNECT_API_KEY_ID'],
-        issuer_id: ENV['APP_STORE_CONNECT_API_ISSUER_ID'],
-        key_filepath: ENV['APP_STORE_CONNECT_API_KEY_PATH']
-      )
-    else
-      UI.message("Using match for certificate management")
+      api_key_path = nil
+      
+      # ตรวจสอบว่ามี API key หรือไม่
+      if ENV['APP_STORE_CONNECT_API_KEY_BASE64'] && !ENV['APP_STORE_CONNECT_API_KEY_BASE64'].empty?
+        UI.message("🔑 Found base64 encoded API key")
+        
+        # Method 1: Decode base64
+        begin
+          api_key_content = Base64.decode64(ENV['APP_STORE_CONNECT_API_KEY_BASE64'])
+          api_key_path = '/tmp/AuthKey.p8'
+          File.write(api_key_path, api_key_content)
+          
+          # ตรวจสอบว่าไฟล์ถูกสร้างและมีขนาดมากกว่า 0
+          unless File.exist?(api_key_path) && File.size(api_key_path) > 0
+            raise "Failed to create API key file"
+          end
+          
+          UI.success("✅ API key file created successfully")
+          
+        rescue => decode_error
+          UI.error("❌ Failed to decode base64 API key: #{decode_error.message}")
+          api_key_path = nil
+        end
+        
+      elsif ENV['APP_STORE_CONNECT_API_KEY_CONTENT'] && !ENV['APP_STORE_CONNECT_API_KEY_CONTENT'].empty?
+        UI.message("🔑 Found raw API key content")
+        
+        # Method 2: Direct content
+        begin
+          api_key_path = '/tmp/AuthKey.p8'
+          File.write(api_key_path, ENV['APP_STORE_CONNECT_API_KEY_CONTENT'])
+          
+          unless File.exist?(api_key_path) && File.size(api_key_path) > 0
+            raise "Failed to create API key file"
+          end
+          
+          UI.success("✅ API key file created successfully")
+          
+        rescue => write_error
+          UI.error("❌ Failed to write API key content: #{write_error.message}")
+          api_key_path = nil
+        end
+        
+      elsif ENV['APP_STORE_CONNECT_API_KEY_PATH'] && File.exist?(ENV['APP_STORE_CONNECT_API_KEY_PATH'])
+        UI.message("🔑 Found existing API key path")
+        api_key_path = ENV['APP_STORE_CONNECT_API_KEY_PATH']
+        
+      else
+        UI.message("⚠️ No API key found in environment variables")
+        UI.message("Available options:")
+        UI.message("- APP_STORE_CONNECT_API_KEY_BASE64 (base64 encoded .p8 file)")
+        UI.message("- APP_STORE_CONNECT_API_KEY_CONTENT (raw .p8 content)")  
+        UI.message("- APP_STORE_CONNECT_API_KEY_PATH (path to .p8 file)")
+      end
+      
+      # ถ้ามี API key ให้ setup
+      if api_key_path
+        # ตรวจสอบ required environment variables
+        unless ENV['APP_STORE_CONNECT_API_KEY_ID'] && ENV['APP_STORE_CONNECT_API_ISSUER_ID']
+          raise "❌ Missing required environment variables: APP_STORE_CONNECT_API_KEY_ID or APP_STORE_CONNECT_API_ISSUER_ID"
+        end
+        
+        # Setup API key
+        app_store_connect_api_key(
+          key_id: ENV['APP_STORE_CONNECT_API_KEY_ID'],
+          issuer_id: ENV['APP_STORE_CONNECT_API_ISSUER_ID'],
+          key_filepath: api_key_path
+        )
+        
+        UI.success("✅ App Store Connect API key configured successfully")
+        
+        # Setup certificates with API key
+        match(
+          type: "appstore",
+          readonly: true,
+          api_key_path: api_key_path
+        )
+        
+      else
+        UI.message("🔐 Falling back to match without API key")
+        
+        # Fallback: ใช้ match แบบปกติ
+        match(
+          type: "appstore", 
+          readonly: true
+        )
+      end
+      
+      UI.success("✅ Certificate setup completed successfully")
+      
+    rescue => e
+      UI.error("❌ Certificate setup failed: #{e.message}")
+      UI.error("Stack trace: #{e.backtrace.first(3).join("\n")}")
+      
+      # ทำความสะอาดไฟล์ API key ที่อาจสร้างไว้
+      begin
+        File.delete('/tmp/AuthKey.p8') if File.exist?('/tmp/AuthKey.p8')
+      rescue
+        # ไม่ต้องทำอะไร
+      end
+      
+      # Re-raise error เพื่อให้ build หยุด
+      raise e
+    ensure
+      # ทำความสะอาดไฟล์ API key หลังใช้งานเสร็จ (security)
+      begin
+        File.delete('/tmp/AuthKey.p8') if File.exist?('/tmp/AuthKey.p8')
+        UI.message("🧹 Cleaned up temporary API key file")
+      rescue
+        # ไม่ต้องทำอะไร
+      end
     end
-    
-    match(
-      type: "appstore",
-      readonly: true,
-      api_key_path: ENV['APP_STORE_CONNECT_API_KEY_PATH']
-    )
   end
 
   private_lane :build_release_app do
