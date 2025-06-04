@@ -1,4 +1,4 @@
-# android/fastlane/Fastfile - Updated with auto version management
+# android/fastlane/Fastfile - Fixed version management
 default_platform(:android)
 
 platform :android do
@@ -8,7 +8,7 @@ platform :android do
     auto_update_version if ENV['GITHUB_RUN_NUMBER']
   end
 
-  # ✨ เพิ่ม: Auto version management
+  # ✨ Fixed: Auto version management with proper Gradle manipulation
   private_lane :auto_update_version do
     begin
       # ดึง version จาก package.json
@@ -34,16 +34,14 @@ platform :android do
       
       version_code = base + run_number
       
-      # อัพเดท Android version ใน build.gradle
-      android_set_version_name(
-        version_name: new_version,
-        gradle_file: "app/build.gradle"
-      )
+      # อัพเดท Android version ใน build.gradle โดยใช้ sed command
+      gradle_file = "app/build.gradle"
       
-      android_set_version_code(
-        version_code: version_code,
-        gradle_file: "app/build.gradle"
-      )
+      # Update versionName
+      sh("sed -i 's/versionName \".*\"/versionName \"#{new_version}\"/' #{gradle_file}")
+      
+      # Update versionCode  
+      sh("sed -i 's/versionCode [0-9]*/versionCode #{version_code}/' #{gradle_file}")
       
       UI.success("✅ Auto updated Android version:")
       UI.success("   versionName: #{new_version}")
@@ -56,32 +54,33 @@ platform :android do
     end
   end
 
-  # ✨ เพิ่ม: Manual version management lanes
+  # ✨ Alternative: Manual version management with increment_version_code
   lane :set_version do |options|
     version_name = options[:version_name] || prompt(text: "Enter version name (e.g., 1.2.3):")
     version_code = options[:version_code] || prompt(text: "Enter version code (e.g., 1000123):").to_i
     
-    android_set_version_name(
-      version_name: version_name,
-      gradle_file: "app/build.gradle"
-    )
+    gradle_file = "app/build.gradle"
     
-    android_set_version_code(
-      version_code: version_code,
-      gradle_file: "app/build.gradle"
-    )
+    # Update using sed commands
+    sh("sed -i 's/versionName \".*\"/versionName \"#{version_name}\"/' #{gradle_file}")
+    sh("sed -i 's/versionCode [0-9]*/versionCode #{version_code}/' #{gradle_file}")
     
     UI.success("✅ Manually set Android version:")
     UI.success("   versionName: #{version_name}")
     UI.success("   versionCode: #{version_code}")
   end
 
+  # ✨ Fixed: Bump version using increment actions
   lane :bump_version do |options|
     type = options[:type] || "patch"  # patch, minor, major
     
+    gradle_file = "app/build.gradle"
+    
     # อ่าน version ปัจจุบันจาก build.gradle
-    current_version = android_get_version_name(gradle_file: "app/build.gradle")
-    current_code = android_get_version_code(gradle_file: "app/build.gradle").to_i
+    gradle_content = File.read(gradle_file)
+    
+    current_version = gradle_content.match(/versionName "([^"]+)"/)[1]
+    current_code = gradle_content.match(/versionCode (\d+)/)[1].to_i
     
     # Parse semantic version
     version_parts = current_version.split('.').map(&:to_i)
@@ -101,19 +100,21 @@ platform :android do
     new_version = version_parts.join('.')
     new_code = current_code + 1
     
-    android_set_version_name(
-      version_name: new_version,
-      gradle_file: "app/build.gradle"
-    )
-    
-    android_set_version_code(
-      version_code: new_code,
-      gradle_file: "app/build.gradle"
-    )
+    # Update using sed commands
+    sh("sed -i 's/versionName \".*\"/versionName \"#{new_version}\"/' #{gradle_file}")
+    sh("sed -i 's/versionCode [0-9]*/versionCode #{new_code}/' #{gradle_file}")
     
     UI.success("✅ Bumped #{type} version:")
     UI.success("   #{current_version} -> #{new_version}")
     UI.success("   versionCode: #{current_code} -> #{new_code}")
+  end
+
+  # 📱 Alternative approach using increment_version_code action
+  lane :increment_build do
+    increment_version_code(
+      gradle_file_path: "app/build.gradle"
+    )
+    UI.success("✅ Incremented version code")
   end
 
   # 🚀 Deployment lanes (เดิม + ปรับปรุง)
