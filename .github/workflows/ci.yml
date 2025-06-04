@@ -52,7 +52,7 @@ jobs:
         id: version
         run: |
           BRANCH_NAME=${{ github.ref_name }}
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          PACKAGE_VERSION=$(node -p "require('../../package.json').version")
           RUN_NUMBER=${{ github.run_number }}
           
           # Generate version name
