@@ -1,4 +1,4 @@
-# ci.yml - สำหรับ testing PR เท่านั้น 
+# ci.yml - Fixed for existing package.json
 name: Pull Request Testing
 
 on:
@@ -8,45 +8,225 @@ on:
       - "develop"
       - "preprod"
 
+env:
+  NODE_VERSION: 20.18.0
+
 jobs:
-  # Testing Job
-  install-and-test:
+  # Main testing and validation
+  test-and-validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    outputs:
+      pr_version: ${{ steps.version.outputs.version }}
+      target_branch: ${{ steps.branch.outputs.name }}
+      coverage: ${{ steps.coverage.outputs.percentage }}
+      
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Use Node.js 20
+      - name: Use Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 20.18.0
+          node-version: ${{ env.NODE_VERSION }}
           cache: "yarn"
-      
-      - name: Check Yarn version
-        run: yarn --version
 
-      - name: Install Node modules
+      - name: Cache Dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            node_modules
+            ~/.cache/yarn
+          key: ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install Dependencies
         run: yarn ci
 
-      - name: Linting
+      - name: Generate PR Version
+        id: version
+        run: |
+          PR_NUMBER=${{ github.event.number }}
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          PR_VERSION="$BASE_VERSION-pr.$PR_NUMBER"
+          echo "version=$PR_VERSION" >> $GITHUB_OUTPUT
+          echo "Generated PR version: $PR_VERSION"
+
+      - name: Set Target Branch  
+        id: branch
+        run: |
+          TARGET_BRANCH=${{ github.base_ref }}
+          echo "name=$TARGET_BRANCH" >> $GITHUB_OUTPUT
+          echo "Target branch: $TARGET_BRANCH"
+
+      # Quality Checks
+      - name: Code Linting
         run: yarn lint
 
-      - name: Unit & Integration tests
+      - name: Type Checking
+        run: yarn type-check
+
+      - name: Security Audit
+        run: |
+          echo "## 🔍 Security Audit Results" >> $GITHUB_STEP_SUMMARY
+          if yarn audit --audit-level moderate --json > audit-results.json 2>/dev/null; then
+            echo "✅ No security vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Security vulnerabilities detected - check logs for details" >> $GITHUB_STEP_SUMMARY
+            yarn audit --audit-level moderate || true
+          fi
+
+      - name: Unit & Integration Tests with Coverage
         run: yarn test:ci
 
-  # Build Testing (ไม่ deploy)
+      - name: Extract Coverage Percentage
+        id: coverage
+        run: |
+          # พยายามหา coverage จากไฟล์ต่างๆ
+          COVERAGE="0"
+          
+          if [ -f "coverage/lcov-report/index.html" ]; then
+            COVERAGE=$(grep -o 'Functions[^>]*>[^<]*<[^>]*>[^<]*<[^>]*>[^<]*<[^>]*>\([0-9]*\.[0-9]*\)%' coverage/lcov-report/index.html | grep -o '[0-9]*\.[0-9]*' | head -1 || echo "0")
+          elif [ -f "coverage/clover.xml" ]; then
+            COVERAGE=$(grep -o 'statements="[0-9]*\.[0-9]*"' coverage/clover.xml | grep -o '[0-9]*\.[0-9]*' | head -1 || echo "0")
+          elif [ -f "coverage/coverage-summary.json" ]; then
+            COVERAGE=$(node -p "JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json')).total.lines.pct" 2>/dev/null || echo "0")
+          fi
+          
+          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "Coverage: $COVERAGE%"
+
+      - name: Coverage Report
+        run: |
+          echo "## 📊 Test Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "- **Coverage:** ${{ steps.coverage.outputs.percentage }}%" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "coverage/lcov-report/index.html" ]; then
+            echo "- **Detailed Report:** Available in artifacts" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # แสดง coverage threshold warning
+          COVERAGE=${{ steps.coverage.outputs.percentage }}
+          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
+            echo "- **⚠️ Warning:** Coverage below 80% recommended threshold" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **✅ Good:** Coverage meets recommended threshold" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload Coverage Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports-${{ github.event.number }}
+          path: |
+            coverage/
+            jest-coverage/
+          retention-days: 7
+
+  # Build testing for Android
   build-android-test:
-    needs: install-and-test
+    needs: test-and-validate
     uses: ./.github/workflows/android-build.yml
     with:
       environment: debug
       publish: false
+      version: ${{ needs.test-and-validate.outputs.pr_version }}
+      branch: ${{ needs.test-and-validate.outputs.target_branch }}
     secrets: inherit
 
+  # Build testing for iOS
   build-ios-test:
-    needs: install-and-test
+    needs: test-and-validate  
     uses: ./.github/workflows/ios-build.yml
     with:
       environment: debug
       publish: false
+      version: ${{ needs.test-and-validate.outputs.pr_version }}
+      branch: ${{ needs.test-and-validate.outputs.target_branch }}
     secrets: inherit
+
+  # Bundle analysis (ถ้าต้องการ)
+  bundle-analysis:
+    needs: test-and-validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "yarn"
+
+      - name: Install Dependencies
+        run: yarn ci
+
+      - name: Build for Bundle Analysis
+        run: |
+          echo "## 📦 Bundle Analysis" >> $GITHUB_STEP_SUMMARY
+          
+          # พยายาม build และวัด size
+          start_time=$(date +%s)
+          
+          if yarn build:android 2>/dev/null || react-native bundle --platform android --dev false --entry-file index.js --bundle-output /tmp/index.android.bundle 2>/dev/null; then
+            end_time=$(date +%s)
+            build_time=$((end_time - start_time))
+            echo "- **Android Build Time:** ${build_time}s" >> $GITHUB_STEP_SUMMARY
+            
+            if [ -f "/tmp/index.android.bundle" ]; then
+              bundle_size=$(du -h /tmp/index.android.bundle | cut -f1)
+              echo "- **Android Bundle Size:** $bundle_size" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "- **Android Build:** ⚠️ Could not analyze (build command not found)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # PR Summary
+  pr-summary:
+    needs: [test-and-validate, build-android-test, build-ios-test, bundle-analysis]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: PR Summary
+        run: |
+          echo "## 🚀 Pull Request Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **PR Version:** ${{ needs.test-and-validate.outputs.pr_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target Branch:** ${{ needs.test-and-validate.outputs.target_branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Coverage:** ${{ needs.test-and-validate.outputs.coverage }}%" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Linting:** ${{ needs.test-and-validate.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Type Check:** ${{ needs.test-and-validate.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Unit Tests:** ${{ needs.test-and-validate.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Security Audit:** ${{ needs.test-and-validate.result == 'success' && '✅ Completed' || '⚠️ Issues Found' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📱 Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Android Build:** ${{ needs.build-android-test.result == 'success' && '✅ Passed' || needs.build-android-test.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY  
+          echo "- **iOS Build:** ${{ needs.build-ios-test.result == 'success' && '✅ Passed' || needs.build-ios-test.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Bundle Analysis:** ${{ needs.bundle-analysis.result == 'success' && '✅ Completed' || '⚠️ Skipped' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall status with coverage consideration
+          COVERAGE=${{ needs.test-and-validate.outputs.coverage }}
+          COVERAGE_OK=$(echo "$COVERAGE >= 70" | bc -l 2>/dev/null || echo "1")
+          
+          if [[ "${{ needs.test-and-validate.result }}" == "success" && "${{ needs.build-android-test.result }}" != "failure" && "${{ needs.build-ios-test.result }}" != "failure" ]]; then
+            if [[ "$COVERAGE_OK" == "1" ]]; then
+              echo "### ✅ Overall Status: Ready for Review" >> $GITHUB_STEP_SUMMARY
+              echo "All checks passed and coverage is adequate." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "### ⚠️ Overall Status: Ready but Low Coverage" >> $GITHUB_STEP_SUMMARY
+              echo "All checks passed but consider improving test coverage." >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "### ❌ Overall Status: Issues Found" >> $GITHUB_STEP_SUMMARY
+            echo "Please fix the failing checks before merging." >> $GITHUB_STEP_SUMMARY
+          fi
