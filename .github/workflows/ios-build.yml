@@ -84,10 +84,15 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode.app  # ใช้ default version
 
       - name: Setup App Store Connect API Key
-        if: inputs.publish == true
         run: |
-          mkdir -p ~/private_keys
-          echo "${{ secrets.APP_STORE_CONNECT_API_KEY }}" | base64 -d > ~/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
+          mkdir -p /tmp/ios-keys  # ✅ ใช้ absolute path แทน ~/
+          if [ -n "${{ secrets.APP_STORE_CONNECT_API_KEY }}" ]; then
+            echo "${{ secrets.APP_STORE_CONNECT_API_KEY }}" | base64 -d > /tmp/ios-keys/AuthKey.p8
+            echo "✅ API Key file created"
+            ls -la /tmp/ios-keys/
+          else
+            echo "⚠️ No API key secret found"
+          fi
 
       # Setup SSH only if needed for Match
       - name: Setup SSH for Match
@@ -121,13 +126,11 @@ jobs:
       - name: Build and Deploy to TestFlight/App Store
         if: inputs.environment == 'release' && inputs.publish == true
         env:
-          # ใช้ App Store Connect API Key แทน username/password
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
-          APP_STORE_CONNECT_API_KEY_PATH: ~/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
+          APP_STORE_CONNECT_API_KEY_PATH: /tmp/ios-keys/AuthKey.p8  # ✅ absolute path
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
-          # เพิ่ม version และ build number
           VERSION_NUMBER: ${{ inputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
         run: |
