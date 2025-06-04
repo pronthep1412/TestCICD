@@ -122,7 +122,7 @@ platform :android do
     UI.message("🚀 Deploying to Internal Testing...")
     build_and_deploy(
       track: 'internal',
-      release_status: 'completed'
+      release_status: 'draft'
     )
     # notify_slack("🚀 Android Development build deployed to Internal Testing!")
   end
@@ -131,7 +131,7 @@ platform :android do
     UI.message("🚀 Deploying to Alpha Testing...")
     build_and_deploy(
       track: 'alpha',
-      release_status: 'completed'
+      release_status: 'draft'
     )
     # notify_slack("🚀 Android Pre-production build deployed to Alpha!")
   end
@@ -140,7 +140,7 @@ platform :android do
     UI.message("🎉 Deploying to Production...")
     build_and_deploy(
       track: 'production',
-      release_status: 'completed',
+      release_status: 'draft',
       rollout: '0.1'  # 10% rollout for safety
     )
     # notify_slack("🎉 Android Production build deployed with 10% rollout!")
