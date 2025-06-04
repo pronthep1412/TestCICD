@@ -121,8 +121,8 @@ jobs:
       - name: Build and Deploy to TestFlight/App Store
         if: inputs.environment == 'release' && inputs.publish == true
         env:
-          FASTLANE_USER: ${{ secrets.APPLE_ID }}
-          FASTLANE_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          # FASTLANE_USER: ${{ secrets.APPLE_ID }}
+          # FASTLANE_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
