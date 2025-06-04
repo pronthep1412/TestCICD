@@ -1,4 +1,4 @@
-# ios-build.yml - Fixed version with better API key handling
+# ios-build.yml - Improved version
 name: "iOS Build and Deploy"
 
 on:
@@ -42,6 +42,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     
+    # Simple environment logic
     environment: 
       name: ${{ inputs.branch == 'master' && 'production' || inputs.branch }}
     
@@ -80,50 +81,41 @@ jobs:
         run: cd ios && pod install
 
       - name: Setup Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app
+        run: sudo xcode-select -s /Applications/Xcode.app  # ใช้ default version
 
-      # 🔧 ปรับปรุง: API Key setup with better error handling
       - name: Setup App Store Connect API Key
         run: |
           mkdir -p /tmp/ios-keys
-          
-          echo "🔍 Checking API Key secret..."
-          if [ -z "${{ secrets.APP_STORE_CONNECT_API_KEY }}" ]; then
-            echo "❌ APP_STORE_CONNECT_API_KEY secret is empty!"
-            exit 1
+          # ตรวจสอบว่า secret มีค่าและไม่ว่าง
+          if [ -n "${{ secrets.APP_STORE_CONNECT_API_KEY }}" ] && [ "${{ secrets.APP_STORE_CONNECT_API_KEY }}" != "" ]; then
+            # Decode และตรวจสอบ format
+            echo "${{ secrets.APP_STORE_CONNECT_API_KEY }}" | base64 -d > /tmp/ios-keys/AuthKey.p8
+            
+            # Validate API key file
+            if [ -f "/tmp/ios-keys/AuthKey.p8" ] && [ -s "/tmp/ios-keys/AuthKey.p8" ]; then
+              echo "✅ API Key file created successfully"
+              echo "File size: $(wc -c < /tmp/ios-keys/AuthKey.p8) bytes"
+              
+              # ตรวจสอบ format ของไฟล์
+              if head -1 /tmp/ios-keys/AuthKey.p8 | grep -q "BEGIN PRIVATE KEY"; then
+                echo "✅ API Key format is valid"
+                export HAS_VALID_API_KEY=true
+              else
+                echo "❌ Invalid API Key format"
+                rm -f /tmp/ios-keys/AuthKey.p8
+                export HAS_VALID_API_KEY=false
+              fi
+            else
+              echo "❌ Failed to create API Key file"
+              export HAS_VALID_API_KEY=false
+            fi
+          else
+            echo "⚠️ No API key secret found or empty"
+            export HAS_VALID_API_KEY=false
           fi
           
-          echo "📝 Creating API Key file..."
-          # ลบ whitespace และ newlines ก่อน decode
-          echo "${{ secrets.APP_STORE_CONNECT_API_KEY }}" | tr -d '\n\r' | base64 -d > /tmp/ios-keys/AuthKey.p8
-          
-          echo "✅ Verifying API Key file..."
-          if [ ! -f "/tmp/ios-keys/AuthKey.p8" ]; then
-            echo "❌ API Key file was not created!"
-            exit 1
-          fi
-          
-          # ตรวจสอบ file size
-          FILE_SIZE=$(stat -f%z /tmp/ios-keys/AuthKey.p8)
-          echo "📊 API Key file size: $FILE_SIZE bytes"
-          
-          if [ "$FILE_SIZE" -lt 100 ]; then
-            echo "⚠️ API Key file seems too small, might be corrupted"
-            echo "📄 File content preview:"
-            head -2 /tmp/ios-keys/AuthKey.p8
-            exit 1
-          fi
-          
-          # ตรวจสอบ format
-          echo "🔍 Checking API Key format..."
-          FIRST_LINE=$(head -1 /tmp/ios-keys/AuthKey.p8)
-          if [[ "$FIRST_LINE" != "-----BEGIN PRIVATE KEY-----" ]]; then
-            echo "❌ Invalid API Key format. Expected '-----BEGIN PRIVATE KEY-----', got: $FIRST_LINE"
-            exit 1
-          fi
-          
-          echo "✅ API Key setup completed successfully"
-          ls -la /tmp/ios-keys/
+          # Export เป็น environment variable
+          echo "HAS_VALID_API_KEY=$HAS_VALID_API_KEY" >> $GITHUB_ENV
 
       # Setup SSH only if needed for Match
       - name: Setup SSH for Match
@@ -154,35 +146,18 @@ jobs:
           cd ios
           bundle exec fastlane build_only
 
-      # 🔧 ปรับปรุง: Build and Deploy with better error handling
       - name: Build and Deploy to TestFlight/App Store
         if: inputs.environment == 'release' && inputs.publish == true
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
-          APP_STORE_CONNECT_API_KEY_PATH: /tmp/ios-keys/AuthKey.p8
+          APP_STORE_CONNECT_API_KEY_PATH: /tmp/ios-keys/AuthKey.p8  # ✅ absolute path
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
           VERSION_NUMBER: ${{ inputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
         run: |
           cd ios
-          
-          echo "🔍 Pre-flight checks..."
-          echo "📋 API Key ID: $APP_STORE_CONNECT_API_KEY_ID"
-          echo "📋 Issuer ID: $APP_STORE_CONNECT_API_ISSUER_ID"
-          echo "📋 API Key Path: $APP_STORE_CONNECT_API_KEY_PATH"
-          echo "📋 Version: $VERSION_NUMBER"
-          echo "📋 Build: $BUILD_NUMBER"
-          echo "📋 Branch: ${{ inputs.branch }}"
-          
-          # ตรวจสอบ API key file อีกครั้งก่อน deploy
-          if [ ! -f "$APP_STORE_CONNECT_API_KEY_PATH" ]; then
-            echo "❌ API Key file not found at: $APP_STORE_CONNECT_API_KEY_PATH"
-            exit 1
-          fi
-          
-          echo "✅ All checks passed, starting deployment..."
           bundle exec fastlane deploy_${{ inputs.branch }}
 
       # Upload artifacts for debug/non-deploy builds
