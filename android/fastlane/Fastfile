@@ -124,7 +124,7 @@ platform :android do
       track: 'internal',
       release_status: 'draft'
     )
-    notify_slack("🚀 Android Development build deployed to Internal Testing!")
+    # notify_slack("🚀 Android Development build deployed to Internal Testing!")
   end
 
   lane :deploy_preprod do
@@ -133,7 +133,7 @@ platform :android do
       track: 'alpha',
       release_status: 'completed'
     )
-    notify_slack("🚀 Android Pre-production build deployed to Alpha!")
+    # notify_slack("🚀 Android Pre-production build deployed to Alpha!")
   end
 
   lane :deploy_master do
@@ -143,7 +143,7 @@ platform :android do
       release_status: 'completed',
       rollout: '0.1'  # 10% rollout for safety
     )
-    notify_slack("🎉 Android Production build deployed with 10% rollout!")
+    # notify_slack("🎉 Android Production build deployed with 10% rollout!")
   end
 
   lane :build_only do
@@ -200,7 +200,7 @@ platform :android do
   error do |lane, exception|
     error_message = "❌ Android deployment failed in lane '#{lane}': #{exception.message}"
     UI.error(error_message)
-    notify_slack(error_message) if defined?(notify_slack)
+    # notify_slack(error_message) if defined?(notify_slack)
     raise exception
   end
 end

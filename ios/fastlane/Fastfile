@@ -115,7 +115,7 @@ platform :ios do
       groups: ["Internal Testers", "Developers"],
       skip_waiting: true
     )
-    notify_slack("🚀 iOS Development build uploaded to TestFlight Internal!")
+    # notify_slack("🚀 iOS Development build uploaded to TestFlight Internal!")
   end
 
   lane :deploy_preprod do
@@ -124,7 +124,7 @@ platform :ios do
       groups: ["Beta Testers", "QA Team"],
       skip_waiting: false
     )
-    notify_slack("🚀 iOS Pre-production build uploaded to TestFlight Beta!")
+    # notify_slack("🚀 iOS Pre-production build uploaded to TestFlight Beta!")
   end
 
   lane :deploy_master do
@@ -147,7 +147,7 @@ platform :ios do
     end
     
     upload_to_app_store(upload_options)
-    notify_slack("🎉 iOS Production build uploaded to App Store Connect!")
+    # notify_slack("🎉 iOS Production build uploaded to App Store Connect!")
   end
 
   lane :build_only do
@@ -174,7 +174,7 @@ platform :ios do
     end
     
     upload_to_app_store(upload_options)
-    notify_slack("📋 iOS app submitted for App Store review!")
+    # notify_slack("📋 iOS app submitted for App Store review!")
   end
 
   # ปรับปรุงเวอร์ชั่น - แข็งแกร่งและครอบคลุมมากขึ้น
@@ -284,7 +284,7 @@ platform :ios do
   error do |lane, exception|
     error_message = "❌ iOS deployment failed in lane '#{lane}': #{exception.message}"
     UI.error(error_message)
-    notify_slack(error_message) if defined?(notify_slack)
+    # notify_slack(error_message) if defined?(notify_slack)
     raise exception
   end
 end
