@@ -1,4 +1,4 @@
-# ci.yml - Fixed Issues Version
+# ci-logic-fix-only.yml - แก้แค่ Logic เท่านั้น
 name: Pull Request Testing
 
 on:
@@ -83,47 +83,36 @@ jobs:
       - name: Unit & Integration Tests with Coverage
         run: yarn test:ci
 
-      - name: Extract Coverage Percentage (Fixed)
+      - name: Extract Coverage Percentage (Simplified)
         id: coverage
         run: |
           COVERAGE="0"
           
-          # Method 1: Try to get from Jest output
-          if yarn test:ci --silent 2>&1 | grep -o "All files[^|]*|[^|]*|[^|]*|[^|]*|[^|]*[0-9]*\.[0-9]*" | tail -1 | grep -o "[0-9]*\.[0-9]*" >/dev/null 2>&1; then
-            COVERAGE=$(yarn test:ci --silent 2>&1 | grep -o "All files[^|]*|[^|]*|[^|]*|[^|]*|[^|]*[0-9]*\.[0-9]*" | tail -1 | grep -o "[0-9]*\.[0-9]*" | tail -1)
-          # Method 2: Try coverage-summary.json
-          elif [ -f "coverage/coverage-summary.json" ]; then
+          # เนื่องจากไม่มี unit tests, coverage จะเป็น 0 อยู่แล้ว
+          # แค่ตรวจสอบว่า Jest run ผ่านหรือไม่
+          
+          if [ -f "coverage/coverage-summary.json" ]; then
             COVERAGE=$(node -p "
               try {
                 const summary = JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json'));
                 summary.total.lines.pct || 0;
               } catch(e) { 0; }
-            ")
-          # Method 3: Try lcov.info
-          elif [ -f "coverage/lcov.info" ]; then
-            if command -v lcov >/dev/null 2>&1; then
-              COVERAGE=$(lcov --summary coverage/lcov.info 2>/dev/null | grep -o "lines......: [0-9]*\.[0-9]*%" | grep -o "[0-9]*\.[0-9]*" | head -1 || echo "0")
-            fi
-          # Method 4: Default Jest coverage pattern
-          elif [ -d "coverage" ]; then
-            # Try to find any coverage percentage in files
-            COVERAGE=$(find coverage -name "*.html" -exec grep -o "[0-9]*\.[0-9]*%" {} \; | head -1 | sed 's/%//' || echo "0")
+            " 2>/dev/null || echo "0")
           fi
           
-          # Fallback: If still empty, set to 0
+          # Validate และ fallback
+          if ! echo "$COVERAGE" | grep -q '^[0-9]*\.*[0-9]*$'; then
+            COVERAGE="0"
+          fi
+          
           if [ -z "$COVERAGE" ] || [ "$COVERAGE" = "" ]; then
             COVERAGE="0"
           fi
           
-          # Validate it's a number
-          if ! echo "$COVERAGE" | grep -q "^[0-9]*\.*[0-9]*$"; then
-            COVERAGE="0"
-          fi
-          
           echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
-          echo "Extracted coverage: $COVERAGE%"
+          echo "Coverage: $COVERAGE%"
 
-      - name: Coverage Report (Fixed)
+      - name: Coverage Report
         run: |
           echo "## 📊 Test Coverage Report" >> $GITHUB_STEP_SUMMARY
           COVERAGE="${{ steps.coverage.outputs.percentage }}"
@@ -132,23 +121,13 @@ jobs:
           if [ -d "coverage" ]; then
             echo "- **Detailed Report:** Available in artifacts" >> $GITHUB_STEP_SUMMARY
           else
-            echo "- **Detailed Report:** Coverage directory not found" >> $GITHUB_STEP_SUMMARY
+            echo "- **Detailed Report:** No coverage files generated" >> $GITHUB_STEP_SUMMARY
           fi
           
-          # Coverage evaluation (using bc if available, otherwise shell arithmetic)
-          if command -v bc >/dev/null 2>&1; then
-            COVERAGE_GOOD=$(echo "$COVERAGE >= 70" | bc -l)
-          else
-            # Shell arithmetic (requires integer)
-            COVERAGE_INT=${COVERAGE%.*}
-            if [ "$COVERAGE_INT" -ge 70 ]; then
-              COVERAGE_GOOD=1
-            else
-              COVERAGE_GOOD=0
-            fi
-          fi
-          
-          if [ "$COVERAGE_GOOD" = "1" ]; then
+          # ถ้าไม่มี unit tests, coverage จะเป็น 0 - ซึ่งเป็นเรื่องปกติ
+          if [ "$COVERAGE" = "0" ]; then
+            echo "- **ℹ️ Info:** No unit tests found - consider adding tests for better code quality" >> $GITHUB_STEP_SUMMARY
+          elif [ "$(awk "BEGIN {print ($COVERAGE >= 70) ? 1 : 0}")" = "1" ]; then
             echo "- **✅ Good:** Coverage meets recommended threshold (≥70%)" >> $GITHUB_STEP_SUMMARY
           else
             echo "- **⚠️ Warning:** Coverage below 70% recommended threshold" >> $GITHUB_STEP_SUMMARY
@@ -186,7 +165,7 @@ jobs:
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
     secrets: inherit
 
-  # Bundle analysis (Fixed)
+  # Bundle analysis
   bundle-analysis:
     needs: test-and-validate
     runs-on: ubuntu-latest
@@ -205,19 +184,15 @@ jobs:
       - name: Install Dependencies
         run: yarn ci
 
-      - name: Bundle Size Analysis (Fixed)
+      - name: Bundle Size Analysis
         run: |
           echo "## 📦 Bundle Analysis" >> $GITHUB_STEP_SUMMARY
           
-          # Create a simple React Native bundle for analysis
           start_time=$(date +%s)
-          
-          # Try different approaches to create a bundle
           bundle_created=false
           
-          # Method 1: Using react-native bundle command
+          # Try React Native bundle
           if command -v react-native >/dev/null 2>&1; then
-            echo "Attempting React Native bundle..."
             if react-native bundle \
               --platform android \
               --dev false \
@@ -229,9 +204,8 @@ jobs:
             fi
           fi
           
-          # Method 2: Using Metro bundler directly (if available)
+          # Fallback: Metro via npx
           if [ "$bundle_created" = false ] && command -v npx >/dev/null 2>&1; then
-            echo "Attempting Metro bundle..."
             if npx react-native bundle \
               --platform android \
               --dev false \
@@ -242,20 +216,14 @@ jobs:
             fi
           fi
           
-          # Method 3: Create a webpack-style build (fallback)
+          # Estimate from source files
           if [ "$bundle_created" = false ]; then
-            echo "Creating approximate bundle size estimation..."
-            # Calculate approximate size from source files
-            if [ -d "src" ] || [ -d "components" ] || [ -d "screens" ]; then
-              # Sum up JS/TS files sizes
-              total_size=$(find . -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" 2>/dev/null | xargs wc -c 2>/dev/null | tail -1 | awk '{print $1}' || echo "0")
-              # Estimate bundle size (roughly 2-3x source size after bundling)
-              estimated_size=$((total_size * 2))
-              echo "$estimated_size" > /tmp/estimated.bundle
-              bundle_path="/tmp/estimated.bundle"
-              bundle_created=true
-              ESTIMATION_NOTE=" (estimated)"
-            fi
+            total_size=$(find . -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" 2>/dev/null | xargs wc -c 2>/dev/null | tail -1 | awk '{print $1}' || echo "0")
+            estimated_size=$((total_size * 2))
+            echo "$estimated_size" > /tmp/estimated.bundle
+            bundle_path="/tmp/estimated.bundle"
+            bundle_created=true
+            ESTIMATION_NOTE=" (estimated)"
           fi
           
           end_time=$(date +%s)
@@ -270,41 +238,35 @@ jobs:
             echo "- **Android Bundle Size:** $bundle_size${ESTIMATION_NOTE:-}" >> $GITHUB_STEP_SUMMARY
             
             # Size evaluation
-            if [ "$bundle_bytes" -lt 1048576 ]; then  # < 1MB
+            if [ "$bundle_bytes" -lt 1048576 ]; then
               echo "- **📊 Size Status:** ✅ Excellent (< 1MB)" >> $GITHUB_STEP_SUMMARY
-            elif [ "$bundle_bytes" -lt 5242880 ]; then  # < 5MB
+            elif [ "$bundle_bytes" -lt 5242880 ]; then
               echo "- **📊 Size Status:** ✅ Good (< 5MB)" >> $GITHUB_STEP_SUMMARY
-            elif [ "$bundle_bytes" -lt 10485760 ]; then  # < 10MB
+            elif [ "$bundle_bytes" -lt 10485760 ]; then
               echo "- **📊 Size Status:** ⚠️ Large (< 10MB)" >> $GITHUB_STEP_SUMMARY
             else
               echo "- **📊 Size Status:** ❌ Very Large (> 10MB)" >> $GITHUB_STEP_SUMMARY
             fi
           else
             echo "- **⚠️ Bundle Analysis:** Could not create bundle" >> $GITHUB_STEP_SUMMARY
-            echo "- **Reason:** React Native bundle commands not available in CI environment" >> $GITHUB_STEP_SUMMARY
-            echo "- **Suggestion:** Add bundle build scripts to package.json" >> $GITHUB_STEP_SUMMARY
           fi
 
-  # PR Summary (Fixed)
+  # PR Summary (Fixed Logic for No Unit Tests)
   pr-summary:
     needs: [test-and-validate, build-android-test, build-ios-test, bundle-analysis]
     if: always()
     runs-on: ubuntu-latest
     
     steps:
-      - name: PR Summary (Fixed)
+      - name: PR Summary (Fixed for No Unit Tests)
         run: |
           echo "## 🚀 Pull Request Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **PR Version:** ${{ needs.test-and-validate.outputs.pr_version }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Target Branch:** ${{ needs.test-and-validate.outputs.target_branch }}" >> $GITHUB_STEP_SUMMARY
           
-          # Handle coverage display
+          # Handle coverage - แสดงตัวเลขจริง ไม่ใช่ "Unable to determine"
           COVERAGE="${{ needs.test-and-validate.outputs.coverage }}"
-          if [ -n "$COVERAGE" ] && [ "$COVERAGE" != "" ] && [ "$COVERAGE" != "0" ]; then
-            echo "- **Test Coverage:** ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- **Test Coverage:** Unable to determine" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "- **Test Coverage:** ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
           
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📊 Test Results" >> $GITHUB_STEP_SUMMARY
@@ -319,35 +281,22 @@ jobs:
           echo "- **Bundle Analysis:** ${{ needs.bundle-analysis.result == 'success' && '✅ Completed' || '⚠️ Partial' }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Overall status with better logic
+          # Fixed Overall Status Logic - รองรับกรณีไม่มี unit tests
           TEST_SUCCESS="${{ needs.test-and-validate.result == 'success' }}"
           ANDROID_OK="${{ needs.build-android-test.result != 'failure' }}"
           IOS_OK="${{ needs.build-ios-test.result != 'failure' }}"
-          
-          # Handle coverage evaluation
           COVERAGE="${{ needs.test-and-validate.outputs.coverage }}"
-          COVERAGE_ADEQUATE="true"
-          
-          if [ -n "$COVERAGE" ] && [ "$COVERAGE" != "" ] && [ "$COVERAGE" != "0" ]; then
-            # Try to evaluate coverage (handle decimal)
-            if command -v bc >/dev/null 2>&1; then
-              COVERAGE_ADEQUATE=$(echo "$COVERAGE >= 70" | bc -l)
-            else
-              # Fallback: treat as integer
-              COVERAGE_INT=${COVERAGE%.*}
-              if [ "$COVERAGE_INT" -lt 70 ]; then
-                COVERAGE_ADEQUATE="false"
-              fi
-            fi
-          fi
           
           if [ "$TEST_SUCCESS" = "true" ] && [ "$ANDROID_OK" = "true" ] && [ "$IOS_OK" = "true" ]; then
-            if [ "$COVERAGE_ADEQUATE" = "1" ] || [ "$COVERAGE_ADEQUATE" = "true" ]; then
+            if [ "$COVERAGE" = "0" ]; then
+              echo "### ⚠️ Overall Status: Ready but No Tests" >> $GITHUB_STEP_SUMMARY
+              echo "All checks passed but no unit tests found. Consider adding tests for better code quality." >> $GITHUB_STEP_SUMMARY
+            elif [ "$(awk "BEGIN {print ($COVERAGE >= 70) ? 1 : 0}")" = "1" ]; then
               echo "### ✅ Overall Status: Ready for Review" >> $GITHUB_STEP_SUMMARY
-              echo "All checks passed and coverage is adequate." >> $GITHUB_STEP_SUMMARY
+              echo "All checks passed and coverage is adequate (${COVERAGE}%)." >> $GITHUB_STEP_SUMMARY
             else
               echo "### ⚠️ Overall Status: Ready but Low Coverage" >> $GITHUB_STEP_SUMMARY
-              echo "All checks passed but consider improving test coverage." >> $GITHUB_STEP_SUMMARY
+              echo "All checks passed but consider improving test coverage (${COVERAGE}%)." >> $GITHUB_STEP_SUMMARY
             fi
           else
             echo "### ❌ Overall Status: Issues Found" >> $GITHUB_STEP_SUMMARY
