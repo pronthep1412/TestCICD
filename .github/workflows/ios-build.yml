@@ -26,9 +26,9 @@ on:
         description: Deployment target (testing/production)
         default: 'testing'
     secrets:
-      FASTLANE_USER:
+      APPLE_ID:
         required: true
-      FASTLANE_PASSWORD:
+      APPLE_ID_PASSWORD:
         required: true
       APP_STORE_CONNECT_API_KEY_ID:
         required: true
