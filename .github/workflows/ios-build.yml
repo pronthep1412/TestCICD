@@ -26,9 +26,9 @@ on:
         description: Deployment target (testing/production)
         default: 'testing'
     secrets:
-      APPLE_ID:
+      FASTLANE_USER:
         required: true
-      APPLE_ID_PASSWORD:
+      FASTLANE_PASSWORD:
         required: true
       APP_STORE_CONNECT_API_KEY_ID:
         required: true
@@ -150,8 +150,8 @@ jobs:
       - name: Build and Deploy iOS Production
         if: inputs.environment == 'release' && inputs.publish == true && inputs.target == 'production'
         env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          FASTLANE_USER: ${{ secrets.APPLE_ID }}
+          FASTLANE_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
