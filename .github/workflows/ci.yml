@@ -240,7 +240,7 @@ jobs:
       version: ${{ needs.test-and-validate.outputs.pr_version }}
       version_code: "99"
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
-      cache_key: ${{ github.run_id }}-android
+      # cache_key: ${{ github.run_id }}-android
     secrets: inherit
 
   # Build testing for iOS (improved) 
@@ -254,7 +254,7 @@ jobs:
       version: ${{ needs.test-and-validate.outputs.pr_version }}
       version_code: "99"
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
-      cache_key: ${{ github.run_id }}-ios
+      # cache_key: ${{ github.run_id }}-ios
     secrets: inherit
 
   # Simplified bundle analysis
