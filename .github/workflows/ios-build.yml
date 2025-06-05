@@ -1,4 +1,4 @@
-# ios-build.yml - Improved version
+# .github/workflows/ios-build.yml - Optimized version with redundancy reduction
 name: "iOS Build and Deploy"
 
 on:
@@ -20,6 +20,24 @@ on:
       branch:
         required: true
         type: string
+      # 🆕 NEW: Accept pre-built dependencies cache
+      cache_key:
+        description: 'Dependencies cache key from main pipeline'
+        required: false
+        type: string
+        default: ''
+      # 🆕 NEW: Accept pre-built JS bundle
+      js_bundle_artifact:
+        description: 'Pre-built JavaScript bundle artifact name'
+        required: false
+        type: string
+        default: ''
+      # 🆕 NEW: Skip Node.js setup entirely
+      skip_node_setup:
+        description: 'Skip Node.js setup and use pre-built assets'
+        required: false
+        type: boolean
+        default: false
     secrets:
       APPLE_ID:
         required: true
@@ -40,129 +58,414 @@ on:
       NPM_TOKEN:
         required: true
 
+env:
+  NODE_VERSION: 22.11.0  # 🔄 Updated to latest LTS
+  DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+
 jobs:
   build-ios:
-    runs-on: macos-15
-    timeout-minutes: 45
+    runs-on: macos-15  # Latest stable macOS
+    timeout-minutes: 40  # 🔄 Reduced from 45 (optimizations)
     
-    # Simple environment logic
+    # Simple environment logic (unchanged)
     environment: 
       name: ${{ inputs.branch == 'master' && 'production' || inputs.branch }}
     
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4  # 🔄 Updated from v3
 
-      - name: Use Node.js 20
-        uses: actions/setup-node@v3
+      # 🎯 System information for debugging
+      - name: System Information
+        run: |
+          echo "🖥️ System Information:"
+          echo "- macOS: $(sw_vers -productVersion)"
+          echo "- Xcode: $(xcodebuild -version | head -1)"
+          echo "- Available Xcode versions:"
+          ls /Applications/ | grep Xcode || echo "  Only default Xcode available"
+          echo "- Ruby: $(ruby --version)"
+          echo "- Available space: $(df -h . | tail -1 | awk '{print $4}')"
+
+      # 🎯 Conditional Node.js setup - skip if requested
+      - name: Setup Node.js Environment
+        if: inputs.skip_node_setup == false
+        uses: actions/setup-node@v4  # 🔄 Updated from v3
         with:
-          node-version: 20.18.0
+          node-version: ${{ env.NODE_VERSION }}  # 🔄 Use env variable
           cache: "yarn"
 
-      - name: Install Node modules
-        run: yarn ci
+      # 🚀 Smart dependency handling - skip if not needed
+      - name: Restore Dependencies Cache
+        if: inputs.cache_key != '' && inputs.skip_node_setup == false
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            ~/.cache/yarn
+            ~/.npm
+          key: ${{ inputs.cache_key }}
+          fail-on-cache-miss: true
 
+      - name: Install Node Dependencies
+        if: inputs.cache_key == '' && inputs.skip_node_setup == false
+        run: |
+          yarn install --frozen-lockfile --prefer-offline
+          echo "✅ Node dependencies installed: $(du -sh node_modules | cut -f1)"
+
+      # 🎯 Smart JS bundle handling
+      - name: Download Pre-built JS Bundle
+        if: inputs.js_bundle_artifact != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.js_bundle_artifact }}
+          path: ./js-bundle/
+
+      - name: Setup JS Bundle for iOS
+        run: |
+          mkdir -p ios/bundle
+          
+          if [ "${{ inputs.js_bundle_artifact }}" != "" ] && [ -f "./js-bundle/main.jsbundle" ]; then
+            # Use pre-built iOS bundle
+            cp ./js-bundle/main.jsbundle ios/bundle/
+            if [ -d "./js-bundle/assets" ]; then
+              cp -r ./js-bundle/assets/* ios/bundle/ 2>/dev/null || true
+            fi
+            echo "✅ Using pre-built iOS JS bundle"
+          elif [ "${{ inputs.skip_node_setup }}" = "false" ]; then
+            # Create new iOS bundle (only if Node.js is available)
+            echo "🔄 Creating fresh iOS JS bundle..."
+            npx react-native bundle \
+              --platform ios \
+              --dev false \
+              --entry-file index.js \
+              --bundle-output ios/bundle/main.jsbundle \
+              --assets-dest ios/bundle/ \
+              --minify true
+            echo "✅ Fresh iOS JS bundle created"
+          else
+            echo "❌ No JS bundle available and Node.js setup skipped!"
+            exit 1
+          fi
+          
+          # Verify bundle
+          if [ -f "ios/bundle/main.jsbundle" ]; then
+            bundle_size=$(ls -lh ios/bundle/main.jsbundle | awk '{print $5}')
+            echo "📦 iOS JS bundle ready: $bundle_size"
+          else
+            echo "❌ iOS JS bundle missing!"
+            exit 1
+          fi
+
+      # 🔄 Enhanced Ruby setup
       - name: Setup Ruby for Fastlane
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 3.1
+          ruby-version: '3.2'  # 🔄 Updated from 3.1
           bundler-cache: true
           working-directory: ios
 
-      - name: Cache Build Dependencies
-        uses: actions/cache@v3
+      # 🚀 Enhanced iOS dependencies cache
+      - name: Cache iOS Build Dependencies
+        uses: actions/cache@v4  # 🔄 Updated from v3
         with:
           path: |
             ios/Pods
             ios/DerivedData
+            ios/build
             ~/Library/Caches/CocoaPods
             ~/Library/Developer/Xcode/DerivedData
-          key: ${{ runner.os }}-ios-${{ hashFiles('ios/Podfile.lock', 'yarn.lock') }}
+            ~/.cocoapods
+          key: ${{ runner.os }}-ios-${{ hashFiles('ios/Podfile.lock', 'yarn.lock', 'ios/TestCICD.xcodeproj/project.pbxproj') }}
           restore-keys: |
             ${{ runner.os }}-ios-
 
-      - name: Install Pod Dependencies
-        run: cd ios && pod install
+      # 🎯 Enhanced Pod installation
+      - name: Install CocoaPods Dependencies
+        run: |
+          cd ios
+          echo "📱 Installing CocoaPods dependencies..."
+          
+          # Check if cache hit
+          if [ -d "Pods" ] && [ -f "Podfile.lock" ]; then
+            echo "✅ Pods cache found, verifying integrity..."
+            pod install --deployment 2>/dev/null || {
+              echo "⚠️ Cache invalid, reinstalling..."
+              rm -rf Pods Podfile.lock
+              pod install
+            }
+          else
+            echo "🔄 Installing fresh Pods..."
+            pod install
+          fi
+          
+          # Post-install verification
+          if [ -d "Pods" ]; then
+            pod_count=$(find Pods -name "*.podspec" | wc -l)
+            echo "✅ CocoaPods installation completed: $pod_count pods"
+          else
+            echo "❌ CocoaPods installation failed!"
+            exit 1
+          fi
 
-      - name: Setup Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app  # ใช้ default version
+      # 🔄 Enhanced Xcode setup
+      - name: Setup Xcode Environment
+        run: |
+          # Ensure we're using the default Xcode
+          sudo xcode-select -s /Applications/Xcode.app
+          
+          # Clear any derived data issues
+          rm -rf ~/Library/Developer/Xcode/DerivedData/TestCICD-*
+          
+          # Verify setup
+          echo "✅ Xcode setup completed:"
+          echo "- Selected: $(xcode-select -p)"
+          echo "- Version: $(xcodebuild -version)"
+          echo "- SDKs: $(xcodebuild -showsdks | grep iOS | tail -1)"
 
-      # - name: Setup App Store Connect API Key
-      #   run: |
-      #     mkdir -p /tmp/ios-keys  # ✅ ใช้ absolute path แทน ~/
-      #     if [ -n "${{ secrets.APP_STORE_CONNECT_API_KEY }}" ]; then
-      #       echo "${{ secrets.APP_STORE_CONNECT_API_KEY }}" | base64 -d > /tmp/ios-keys/AuthKey.p8
-      #       echo "✅ API Key file created"
-      #       ls -la /tmp/ios-keys/
-      #     else
-      #       echo "⚠️ No API key secret found"
-      #     fi
-
-      # Setup SSH only if needed for Match
+      # 🔒 Enhanced SSH setup for Match (only when needed)
       - name: Setup SSH for Match
-        if: inputs.environment == 'release'
+        if: inputs.environment == 'release' && secrets.MATCH_PRIVATE_KEY != ''
         uses: webfactory/ssh-agent@v0.9.1
         with:
           ssh-private-key: ${{ secrets.MATCH_PRIVATE_KEY }}
 
-      # Debug build for testing
+      # 🎯 Enhanced App Store Connect API setup
+      - name: Setup App Store Connect API
+        if: inputs.environment == 'release'
+        run: |
+          mkdir -p /tmp/ios-keys
+          
+          if [ -n "${{ secrets.APP_STORE_CONNECT_API_KEY }}" ]; then
+            echo "${{ secrets.APP_STORE_CONNECT_API_KEY }}" | base64 -d > /tmp/ios-keys/AuthKey.p8
+            
+            # Verify API key
+            if [ -f "/tmp/ios-keys/AuthKey.p8" ]; then
+              key_size=$(ls -lh /tmp/ios-keys/AuthKey.p8 | awk '{print $5}')
+              echo "✅ App Store Connect API key ready: $key_size"
+            else
+              echo "❌ API key creation failed!"
+              exit 1
+            fi
+          else
+            echo "⚠️ No App Store Connect API key provided"
+          fi
+
+      # 🚀 Enhanced iOS Debug Build
       - name: Build iOS Debug
         if: inputs.environment == 'debug'
         run: |
           cd ios
+          echo "🔨 Building iOS Debug..."
+          
+          # Pre-build validation
+          echo "📋 Pre-build checks:"
+          echo "- Workspace: $(ls -la *.xcworkspace)"
+          echo "- Scheme available: $(xcodebuild -workspace TestCICD.xcworkspace -list | grep TestCICD)"
+          echo "- Simulators: $(xcrun simctl list devices available | grep iPhone | head -3)"
+          
+          # Build with enhanced settings
+          set -o pipefail
           xcodebuild -workspace TestCICD.xcworkspace \
                     -scheme TestCICD \
                     -configuration Debug \
                     -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
                     -derivedDataPath ./DerivedData \
-                    build
+                    -allowProvisioningUpdates \
+                    clean build | tee build.log
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ iOS Debug build completed successfully"
+            
+            # Build summary
+            if [ -f "build.log" ]; then
+              build_time=$(grep "BUILD SUCCEEDED" build.log | tail -1 || echo "Build time not found")
+              echo "⏱️ $build_time"
+            fi
+          else
+            echo "❌ iOS Debug build failed"
+            echo "📄 Last 30 lines of build log:"
+            tail -30 build.log
+            exit 1
+          fi
 
-      # Release builds
-      - name: Build Release (No Deploy)
+      # 🚀 Enhanced Release Build (No Deploy)
+      - name: Build iOS Release (No Deploy)
         if: inputs.environment == 'release' && inputs.publish == false
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          VERSION_NUMBER: ${{ inputs.version }}
+          BUILD_NUMBER: ${{ inputs.version_code }}
         run: |
           cd ios
-          bundle exec fastlane build_only
+          echo "🔨 Building iOS Release (No Deploy)..."
+          
+          # Pre-build setup
+          echo "📋 Release build configuration:"
+          echo "- Version: $VERSION_NUMBER"
+          echo "- Build: $BUILD_NUMBER"
+          echo "- Match URL configured: $([ -n "$MATCH_GIT_URL" ] && echo "Yes" || echo "No")"
+          
+          # Build with Fastlane
+          if bundle exec fastlane build_only; then
+            echo "✅ iOS Release build completed successfully"
+            
+            # Find and report built artifacts
+            if [ -d "build" ]; then
+              echo "📦 Build artifacts:"
+              ls -la build/*.ipa 2>/dev/null || echo "No IPA files found"
+              
+              # Report sizes
+              for ipa in build/*.ipa; do
+                if [ -f "$ipa" ]; then
+                  ipa_size=$(ls -lh "$ipa" | awk '{print $5}')
+                  echo "- $(basename "$ipa"): $ipa_size"
+                fi
+              done
+            fi
+          else
+            echo "❌ iOS Release build failed"
+            echo "🔍 Checking Fastlane logs..."
+            ls -la fastlane/logs/ 2>/dev/null || echo "No Fastlane logs found"
+            exit 1
+          fi
 
+      # 🚀 Enhanced Build and Deploy
       - name: Build and Deploy to TestFlight/App Store
         if: inputs.environment == 'release' && inputs.publish == true
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
-          # APP_STORE_CONNECT_API_KEY_PATH: /tmp/ios-keys/AuthKey.p8  # ✅ absolute path
+          APP_STORE_CONNECT_API_KEY_PATH: /tmp/ios-keys/AuthKey.p8
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
           VERSION_NUMBER: ${{ inputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
         run: |
           cd ios
-          bundle exec fastlane deploy_${{ inputs.branch }}
-
-      # Upload artifacts for debug/non-deploy builds
-      - name: Upload Build Artifacts
-        if: inputs.publish == false && inputs.environment == 'release'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-${{ inputs.environment }}-${{ inputs.version }}
-          path: ios/build/*.ipa
-          retention-days: 7
-
-      # Deployment summary
-      - name: Deployment Summary
-        if: inputs.publish == true
-        run: |
+          echo "🚀 Building and deploying iOS to App Store Connect..."
+          
+          # Pre-deploy validation
+          echo "📋 Deployment configuration:"
+          echo "- Target: ${{ inputs.branch }}"
+          echo "- Version: $VERSION_NUMBER"
+          echo "- Build: $BUILD_NUMBER"
+          echo "- API Key ID: ${APP_STORE_CONNECT_API_KEY_ID:0:8}..."
+          echo "- API Key file: $([ -f "$APP_STORE_CONNECT_API_KEY_PATH" ] && echo "Ready" || echo "Missing")"
+          
+          # Determine deployment track
           TRACK="TestFlight Internal"
-          if [ "${{ inputs.branch }}" = "master" ]; then
-            TRACK="App Store"
-          elif [ "${{ inputs.branch }}" = "preprod" ]; then
-            TRACK="TestFlight Beta"
+          case "${{ inputs.branch }}" in
+            "master") TRACK="App Store" ;;
+            "preprod") TRACK="TestFlight Beta" ;;
+          esac
+          echo "- Deployment track: $TRACK"
+          
+          # Deploy with Fastlane
+          if bundle exec fastlane deploy_${{ inputs.branch }}; then
+            echo "✅ iOS deployment to $TRACK completed successfully"
+          else
+            echo "❌ iOS deployment failed"
+            echo "🔍 Fastlane logs:"
+            find fastlane/logs -name "*.log" -exec echo "=== {} ===" \; -exec tail -50 {} \; 2>/dev/null || echo "No Fastlane logs found"
+            exit 1
+          fi
+
+      # 🎯 Enhanced artifacts upload
+      - name: Upload iOS Build Artifacts
+        if: inputs.publish == false && inputs.environment == 'release'
+        uses: actions/upload-artifact@v4  # 🔄 Updated from v3
+        with:
+          name: ios-${{ inputs.environment }}-${{ inputs.version }}-${{ github.run_number }}
+          path: |
+            ios/build/*.ipa
+            ios/build/*.dSYM.zip
+            ios/build.log
+            ios/fastlane/logs/*.log
+          retention-days: 7
+          compression-level: 6
+
+      # 🎯 Enhanced build summary
+      - name: Generate Build Summary
+        if: always()
+        run: |
+          echo "## 🍎 iOS Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Number:** ${{ inputs.version_code }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ inputs.branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner:** ${{ runner.os }} ($(sw_vers -productVersion))" >> $GITHUB_STEP_SUMMARY
+          echo "- **Xcode:** $(xcodebuild -version | head -1)" >> $GITHUB_STEP_SUMMARY
+          
+          # Build status
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "- **Build Status:** ✅ Success" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Build Status:** ❌ Failed" >> $GITHUB_STEP_SUMMARY
           fi
           
-          echo "## 🍎 iOS Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version:** ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch:** ${{ inputs.branch }}" >> $GITHUB_STEP_SUMMARY  
-          echo "- **Track:** $TRACK" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status:** ✅ Deployed successfully" >> $GITHUB_STEP_SUMMARY
+          # File sizes and details
+          if [ -d "ios/build" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📦 Build Artifacts" >> $GITHUB_STEP_SUMMARY
+            
+            for ipa in ios/build/*.ipa; do
+              if [ -f "$ipa" ]; then
+                ipa_name=$(basename "$ipa")
+                ipa_size=$(ls -lh "$ipa" | awk '{print $5}')
+                echo "- **$ipa_name:** $ipa_size" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+            
+            # dSYM files
+            for dsym in ios/build/*.dSYM.zip; do
+              if [ -f "$dsym" ]; then
+                dsym_name=$(basename "$dsym")
+                dsym_size=$(ls -lh "$dsym" | awk '{print $5}')
+                echo "- **$dsym_name:** $dsym_size" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+          fi
+          
+          # Deployment info
+          if [ "${{ inputs.publish }}" = "true" ]; then
+            TRACK="TestFlight Internal"
+            case "${{ inputs.branch }}" in
+              "master") TRACK="App Store" ;;
+              "preprod") TRACK="TestFlight Beta" ;;
+            esac
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🚀 Deployment" >> $GITHUB_STEP_SUMMARY
+            echo "- **Target:** $TRACK" >> $GITHUB_STEP_SUMMARY
+            echo "- **Status:** ✅ Deployed successfully" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ inputs.environment }}" = "release" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📁 Artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "- **Status:** Available for download" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Performance metrics
+          if [ -f "ios/build.log" ]; then
+            if grep -q "BUILD SUCCEEDED" ios/build.log; then
+              build_time=$(grep "BUILD SUCCEEDED" ios/build.log | tail -1 | grep -o '[0-9]*\.[0-9]*s' || echo "Unknown")
+              if [ "$build_time" != "Unknown" ]; then
+                echo "- **Build Time:** $build_time" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "*Build completed on $(date)*" >> $GITHUB_STEP_SUMMARY
+
+      # 🧹 Cleanup sensitive files
+      - name: Cleanup Sensitive Files
+        if: always()
+        run: |
+          rm -rf /tmp/ios-keys
+          rm -f ios/google-play-key.json 2>/dev/null || true
+          
+          # Clean up Fastlane temporary files
+          rm -rf ios/fastlane/tmp 2>/dev/null || true
+          
+          echo "✅ Sensitive files cleaned up"
