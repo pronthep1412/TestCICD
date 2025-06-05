@@ -1,286 +1,329 @@
-# 🚀 UPDATED ci.yml - Ultimate Optimization
+# ci.yml - Super Simple Version (เดิม + เพิ่ม bundle sharing)
 name: Pull Request Testing
 
 on:
   pull_request:
-    branches: [master, develop, preprod]
-    paths-ignore: ['**.md', 'docs/**', '.gitignore']
+    branches:
+      - master
+      - develop
+      - preprod
 
 env:
   NODE_VERSION: 22.11.0
-  YARN_ENABLE_IMMUTABLE_INSTALLS: false
-  CI: true
-
-defaults:
-  run:
-    shell: bash
 
 jobs:
-  # 🎯 Single source of truth for ALL Node.js setup
-  main-pipeline:
+  # Main testing and validation (เดิม + bundle creation)
+  test-and-validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     outputs:
       pr_version: ${{ steps.version.outputs.version }}
       target_branch: ${{ steps.branch.outputs.name }}
       coverage: ${{ steps.coverage.outputs.percentage }}
       should_build: ${{ steps.changes.outputs.should_build }}
-      # 🆕 NEW: Share setup artifacts
-      node_cache_key: ${{ steps.cache-deps.outputs.cache-primary-key }}
-      js_bundle_android: js-bundle-android-${{ github.run_number }}
-      js_bundle_ios: js-bundle-ios-${{ github.run_number }}
+      cache_key: ${{ steps.cache-deps.outputs.cache-primary-key }}
       
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Detect Changes
+      # 🆕 Check if we need builds
+      - name: Check Changes
         id: changes
         run: |
           if git diff --name-only HEAD~1 HEAD | grep -E '\.(js|jsx|ts|tsx|json|lock)$|android/|ios/' > /dev/null; then
             echo "should_build=true" >> $GITHUB_OUTPUT
-            echo "Code changes detected - will run full pipeline"
           else
             echo "should_build=false" >> $GITHUB_OUTPUT
-            echo "Only documentation changes - skipping builds"
           fi
 
-      # 🎯 MASTER Node.js setup - only place that installs
-      - name: Setup Node.js Environment (Master)
+      - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: yarn
 
-      - name: Cache Dependencies (Master)
+      - name: Cache Dependencies
         id: cache-deps
         uses: actions/cache@v4
         with:
           path: |
             node_modules
             ~/.cache/yarn
-            ~/.npm
-            ios/Pods
-          key: deps-${{ runner.os }}-${{ hashFiles('yarn.lock', 'ios/Podfile.lock') }}
-          restore-keys: deps-${{ runner.os }}-
+          key: ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
 
-      - name: Install Dependencies (Master)
-        run: |
-          yarn install --frozen-lockfile --prefer-offline
-          echo "✅ Master dependencies installed: $(du -sh node_modules | cut -f1)"
+      - name: Install Dependencies
+        run: yarn install --frozen-lockfile
 
-      - name: Generate Metadata
+      - name: Generate PR Version
         id: version
         run: |
           PR_NUMBER=${{ github.event.number }}
           BASE_VERSION=$(node -p "require('./package.json').version")
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          PR_VERSION="$BASE_VERSION-pr.$PR_NUMBER.$SHORT_SHA"
+          PR_VERSION="$BASE_VERSION-pr.$PR_NUMBER"
           echo "version=$PR_VERSION" >> $GITHUB_OUTPUT
           echo "Generated PR version: $PR_VERSION"
 
-      - name: Set Target Branch
+      - name: Set Target Branch  
         id: branch
-        run: echo "name=${{ github.base_ref }}" >> $GITHUB_OUTPUT
-
-      - name: Code Quality Suite
         run: |
-          echo "Running comprehensive quality checks..."
-          yarn lint --format=json --output-file=lint-results.json &
-          LINT_PID=$!
-          yarn type-check --noEmit &
-          TYPE_PID=$!
-          yarn audit --level moderate --json > audit-results.json 2>/dev/null || echo "Security issues detected" &
-          AUDIT_PID=$!
-          
-          wait $LINT_PID && echo "✅ Linting passed" || (echo "❌ Linting failed" && exit 1)
-          wait $TYPE_PID && echo "✅ Type checking passed" || (echo "❌ Type checking failed" && exit 1)
-          wait $AUDIT_PID
+          TARGET_BRANCH=${{ github.base_ref }}
+          echo "name=$TARGET_BRANCH" >> $GITHUB_OUTPUT
+          echo "Target branch: $TARGET_BRANCH"
 
-      - name: Test Suite with Coverage
+      # Quality Checks (เดิม)
+      - name: Code Linting
+        run: yarn lint
+
+      - name: Type Checking
+        run: yarn type-check
+
+      - name: Security Audit
         run: |
-          yarn test:ci --coverage --watchAll=false --passWithNoTests
-          if [ -f "coverage/coverage-summary.json" ] && command -v npx >/dev/null; then
-            npx coverage-badges-cli --output coverage/badges 2>/dev/null || true
+          echo "## 🔍 Security Audit Results" >> $GITHUB_STEP_SUMMARY
+          if yarn audit --audit-level moderate --json > audit-results.json 2>/dev/null; then
+            echo "✅ No security vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Security vulnerabilities detected - check logs for details" >> $GITHUB_STEP_SUMMARY
+            yarn audit --audit-level moderate || true
           fi
 
-      - name: Extract Test Results
+      - name: Unit & Integration Tests with Coverage
+        run: yarn test:ci
+
+      - name: Extract Coverage Percentage
         id: coverage
         run: |
           COVERAGE="0"
+          
           if [ -f "coverage/coverage-summary.json" ]; then
             COVERAGE=$(node -p "
               try {
-                const summary = require('./coverage/coverage-summary.json');
-                Math.round(summary.total.lines.pct || 0);
+                const summary = JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json'));
+                summary.total.lines.pct || 0;
               } catch(e) { 0; }
-            ")
+            " 2>/dev/null || echo "0")
           fi
+          
+          # Validate และ fallback
+          if ! echo "$COVERAGE" | grep -q '^[0-9]*\.*[0-9]*$'; then
+            COVERAGE="0"
+          fi
+          
+          if [ -z "$COVERAGE" ] || [ "$COVERAGE" = "" ]; then
+            COVERAGE="0"
+          fi
+          
           echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
-          echo "Test coverage: $COVERAGE%"
+          echo "Coverage: $COVERAGE%"
 
-      # 🎯 Create JS bundles ONCE for all platforms
-      - name: Create JavaScript Bundles
+      # 🆕 Create bundles once
+      - name: Create JS Bundles for Sharing
         if: steps.changes.outputs.should_build == 'true'
         run: |
-          echo "📦 Creating JavaScript bundles for all platforms..."
+          echo "📦 Creating JavaScript bundles..."
           
           # Android bundle
-          mkdir -p dist/android
+          mkdir -p bundles/android
           npx react-native bundle \
             --platform android \
             --dev false \
             --entry-file index.js \
-            --bundle-output dist/android/index.android.bundle \
-            --assets-dest dist/android/assets/ \
+            --bundle-output bundles/android/index.android.bundle \
+            --assets-dest bundles/android/assets/ \
             --minify true
           
           # iOS bundle  
-          mkdir -p dist/ios
+          mkdir -p bundles/ios
           npx react-native bundle \
             --platform ios \
             --dev false \
             --entry-file index.js \
-            --bundle-output dist/ios/main.jsbundle \
-            --assets-dest dist/ios/assets/ \
+            --bundle-output bundles/ios/main.jsbundle \
+            --assets-dest bundles/ios/assets/ \
             --minify true
           
-          # Report sizes
-          android_size=$(ls -lh dist/android/index.android.bundle | awk '{print $5}')
-          ios_size=$(ls -lh dist/ios/main.jsbundle | awk '{print $5}')
-          echo "✅ Android bundle: $android_size"
-          echo "✅ iOS bundle: $ios_size"
+          echo "✅ Bundles created successfully"
 
-      # 🎯 Upload bundles as artifacts  
-      - name: Upload JavaScript Bundles
+      # 🆕 Upload bundles with SIMPLE names
+      - name: Upload Android Bundle
         if: steps.changes.outputs.should_build == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: js-bundle-android-${{ github.run_number }}
-          path: dist/android/
+          path: bundles/android/
           retention-days: 1
 
       - name: Upload iOS Bundle
         if: steps.changes.outputs.should_build == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: js-bundle-ios-${{ github.run_number }}  
-          path: dist/ios/
+          name: js-bundle-ios-${{ github.run_number }}
+          path: bundles/ios/
           retention-days: 1
 
-      - name: Bundle Analysis
-        if: steps.changes.outputs.should_build == 'true'
+      - name: Coverage Report
         run: |
-          echo "## 📦 Bundle Analysis" >> $GITHUB_STEP_SUMMARY
-          if [ -f "dist/android/index.android.bundle" ]; then
-            bundle_size=$(ls -lh dist/android/index.android.bundle | awk '{print $5}')
-            bundle_bytes=$(wc -c < dist/android/index.android.bundle)
-            echo "- **Android Bundle Size:** $bundle_size" >> $GITHUB_STEP_SUMMARY
-            
-            if [ "$bundle_bytes" -lt 2097152 ]; then
-              echo "- **Status:** 🎉 Excellent (< 2MB)" >> $GITHUB_STEP_SUMMARY
-            elif [ "$bundle_bytes" -lt 5242880 ]; then
-              echo "- **Status:** ✅ Good (< 5MB)" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "- **Status:** ⚠️ Large bundle - consider optimization" >> $GITHUB_STEP_SUMMARY
-            fi
+          echo "## 📊 Test Coverage Report" >> $GITHUB_STEP_SUMMARY
+          COVERAGE="${{ steps.coverage.outputs.percentage }}"
+          echo "- **Coverage:** ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -d "coverage" ]; then
+            echo "- **Detailed Report:** Available in artifacts" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Detailed Report:** No coverage files generated" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "$COVERAGE" = "0" ]; then
+            echo "- **ℹ️ Info:** No unit tests found - consider adding tests for better code quality" >> $GITHUB_STEP_SUMMARY
+          elif [ "$(awk "BEGIN {print ($COVERAGE >= 70) ? 1 : 0}")" = "1" ]; then
+            echo "- **✅ Good:** Coverage meets recommended threshold (≥70%)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **⚠️ Warning:** Coverage below 70% recommended threshold" >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Performance Check
-        continue-on-error: true
-        run: |
-          echo "## ⚡ Performance Metrics" >> $GITHUB_STEP_SUMMARY
-          start_time=$(date +%s%3N)
-          timeout 30s npx react-native start --reset-cache >/dev/null 2>&1 &
-          METRO_PID=$!
-          sleep 20
-          kill $METRO_PID 2>/dev/null || true
-          wait $METRO_PID 2>/dev/null || true
-          end_time=$(date +%s%3N)
-          
-          metro_time=$(( (end_time - start_time) / 1000 ))
-          echo "- **Metro Start Time:** ${metro_time}s" >> $GITHUB_STEP_SUMMARY
-
-      - name: Upload Test Artifacts
+      - name: Upload Coverage Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ github.event.number }}
+          name: coverage-reports-${{ github.event.number }}
           path: |
             coverage/
-            lint-results.json
-            audit-results.json
+            jest-coverage/
           retention-days: 7
 
-  # 🚀 Optimized Android build - no Node.js setup!
-  build-android:
-    needs: main-pipeline
-    if: needs.main-pipeline.outputs.should_build == 'true'
+  # Build testing for Android - with bundle sharing
+  build-android-test:
+    needs: test-and-validate
+    if: needs.test-and-validate.outputs.should_build == 'true'
     uses: ./.github/workflows/android-build.yml
     with:
       environment: debug
       publish: false
-      version: ${{ needs.main-pipeline.outputs.pr_version }}
+      version: ${{ needs.test-and-validate.outputs.pr_version }}
       version_code: "99"
-      branch: ${{ needs.main-pipeline.outputs.target_branch }}
-      # 🎯 NEW: Skip Node.js setup entirely
-      skip_node_setup: true
-      js_bundle_artifact: ${{ needs.main-pipeline.outputs.js_bundle_android }}
+      branch: ${{ needs.test-and-validate.outputs.target_branch }}
+      cache_key: ${{ needs.test-and-validate.outputs.cache_key }}
+      js_bundle_artifact: js-bundle-android-${{ github.run_number }}
     secrets: inherit
 
-  # 🚀 Optimized iOS build - no Node.js setup!
-  build-ios:
-    needs: main-pipeline
-    if: needs.main-pipeline.outputs.should_build == 'true'
+  # Build testing for iOS - with bundle sharing
+  build-ios-test:
+    needs: test-and-validate  
+    if: needs.test-and-validate.outputs.should_build == 'true'
     uses: ./.github/workflows/ios-build.yml
     with:
       environment: debug
       publish: false
-      version: ${{ needs.main-pipeline.outputs.pr_version }}
+      version: ${{ needs.test-and-validate.outputs.pr_version }}
       version_code: "99"
-      branch: ${{ needs.main-pipeline.outputs.target_branch }}
-      # 🎯 NEW: Skip Node.js setup entirely
-      skip_node_setup: true
-      js_bundle_artifact: ${{ needs.main-pipeline.outputs.js_bundle_ios }}
+      branch: ${{ needs.test-and-validate.outputs.target_branch }}
+      cache_key: ${{ needs.test-and-validate.outputs.cache_key }}
+      js_bundle_artifact: js-bundle-ios-${{ github.run_number }}
     secrets: inherit
 
-  # 🎯 Lightweight summary - no checkout/setup needed
-  pr-summary:
-    needs: [main-pipeline, build-android, build-ios]
-    if: always()
+  # Bundle analysis (simplified)
+  bundle-analysis:
+    needs: test-and-validate
+    if: needs.test-and-validate.outputs.should_build == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
+    continue-on-error: true
     
     steps:
-      - name: Generate Final Summary
+      - name: Download Android Bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: js-bundle-android-${{ github.run_number }}
+          path: ./bundle-check/
+
+      - name: Bundle Size Analysis
         run: |
-          echo "## 🚀 Pull Request Analysis Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **PR Version:** ${{ needs.main-pipeline.outputs.pr_version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Target Branch:** ${{ needs.main-pipeline.outputs.target_branch }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Test Coverage:** ${{ needs.main-pipeline.outputs.coverage }}%" >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 Bundle Analysis" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "./bundle-check/index.android.bundle" ]; then
+            bundle_size=$(ls -lh ./bundle-check/index.android.bundle | awk '{print $5}')
+            bundle_bytes=$(wc -c < ./bundle-check/index.android.bundle)
+            
+            echo "- **✅ Bundle Analysis:** Completed" >> $GITHUB_STEP_SUMMARY
+            echo "- **Android Bundle Size:** $bundle_size" >> $GITHUB_STEP_SUMMARY
+            
+            # Size evaluation
+            if [ "$bundle_bytes" -lt 1048576 ]; then
+              echo "- **📊 Size Status:** ✅ Excellent (< 1MB)" >> $GITHUB_STEP_SUMMARY
+            elif [ "$bundle_bytes" -lt 5242880 ]; then
+              echo "- **📊 Size Status:** ✅ Good (< 5MB)" >> $GITHUB_STEP_SUMMARY
+            elif [ "$bundle_bytes" -lt 10485760 ]; then
+              echo "- **📊 Size Status:** ⚠️ Large (< 10MB)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- **📊 Size Status:** ❌ Very Large (> 10MB)" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "- **⚠️ Bundle Analysis:** Bundle file not found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # PR Summary (simplified)
+  pr-summary:
+    needs: [test-and-validate, build-android-test, build-ios-test, bundle-analysis]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: PR Summary
+        run: |
+          echo "## 🚀 Pull Request Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **PR Version:** ${{ needs.test-and-validate.outputs.pr_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target Branch:** ${{ needs.test-and-validate.outputs.target_branch }}" >> $GITHUB_STEP_SUMMARY
+          
+          # Handle coverage
+          COVERAGE="${{ needs.test-and-validate.outputs.coverage }}"
+          echo "- **Test Coverage:** ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Linting:** ${{ needs.test-and-validate.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Type Check:** ${{ needs.test-and-validate.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Unit Tests:** ${{ needs.test-and-validate.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Security Audit:** ${{ needs.test-and-validate.result == 'success' && '✅ Completed' || '⚠️ Issues Found' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📱 Build Results" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.test-and-validate.outputs.should_build }}" = "true" ]; then
+            echo "- **Android Build:** ${{ needs.build-android-test.result == 'success' && '✅ Passed' || needs.build-android-test.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY  
+            echo "- **iOS Build:** ${{ needs.build-ios-test.result == 'success' && '✅ Passed' || needs.build-ios-test.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Bundle Analysis:** ${{ needs.bundle-analysis.result == 'success' && '✅ Completed' || '⚠️ Partial' }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Builds:** ⏭️ Skipped (documentation only)" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          MAIN_STATUS="${{ needs.main-pipeline.result }}"
-          ANDROID_STATUS="${{ needs.build-android.result }}"
-          IOS_STATUS="${{ needs.build-ios.result }}"
+          # Overall Status
+          TEST_SUCCESS="${{ needs.test-and-validate.result == 'success' }}"
+          SHOULD_BUILD="${{ needs.test-and-validate.outputs.should_build }}"
           
-          echo "### 🔍 Pipeline Results" >> $GITHUB_STEP_SUMMARY
-          echo "- **Code Quality:** $([ "$MAIN_STATUS" = "success" ] && echo "✅ Passed" || echo "❌ Failed")" >> $GITHUB_STEP_SUMMARY
-          echo "- **Android Build:** $([ "$ANDROID_STATUS" = "success" ] && echo "✅ Success" || echo "❌ Failed")" >> $GITHUB_STEP_SUMMARY
-          echo "- **iOS Build:** $([ "$IOS_STATUS" = "success" ] && echo "✅ Success" || echo "❌ Failed")" >> $GITHUB_STEP_SUMMARY
-          
-          # Overall status
-          if [ "$MAIN_STATUS" = "success" ] && [ "$ANDROID_STATUS" = "success" ] && [ "$IOS_STATUS" = "success" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 🎉 Status: Ready to Merge!" >> $GITHUB_STEP_SUMMARY
-            echo "All checks passed successfully." >> $GITHUB_STEP_SUMMARY
+          if [ "$SHOULD_BUILD" = "true" ]; then
+            ANDROID_OK="${{ needs.build-android-test.result != 'failure' }}"
+            IOS_OK="${{ needs.build-ios-test.result != 'failure' }}"
           else
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### ❌ Status: Requires Attention" >> $GITHUB_STEP_SUMMARY
-            echo "Some checks failed. Please review and fix issues." >> $GITHUB_STEP_SUMMARY
+            ANDROID_OK="true"
+            IOS_OK="true"
           fi
           
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "*Optimized pipeline completed on $(date)*" >> $GITHUB_STEP_SUMMARY
+          if [ "$TEST_SUCCESS" = "true" ] && [ "$ANDROID_OK" = "true" ] && [ "$IOS_OK" = "true" ]; then
+            if [ "$COVERAGE" = "0" ]; then
+              echo "### ⚠️ Overall Status: Ready but No Tests" >> $GITHUB_STEP_SUMMARY
+              echo "All checks passed but no unit tests found. Consider adding tests for better code quality." >> $GITHUB_STEP_SUMMARY
+            elif [ "$(awk "BEGIN {print ($COVERAGE >= 70) ? 1 : 0}")" = "1" ]; then
+              echo "### ✅ Overall Status: Ready for Review" >> $GITHUB_STEP_SUMMARY
+              echo "All checks passed and coverage is adequate (${COVERAGE}%)." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "### ⚠️ Overall Status: Ready but Low Coverage" >> $GITHUB_STEP_SUMMARY
+              echo "All checks passed but consider improving test coverage (${COVERAGE}%)." >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "### ❌ Overall Status: Issues Found" >> $GITHUB_STEP_SUMMARY
+            echo "Please fix the failing checks before merging." >> $GITHUB_STEP_SUMMARY
+          fi

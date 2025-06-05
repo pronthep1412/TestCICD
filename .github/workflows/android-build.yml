@@ -32,12 +32,6 @@ on:
         required: false
         type: string
         default: ''
-      # 🆕 NEW: Skip Node.js setup entirely
-      skip_node_setup:
-        description: 'Skip Node.js setup and use pre-built assets'
-        required: false
-        type: boolean
-        default: false
     secrets:
       NPM_TOKEN:
         required: true
@@ -68,17 +62,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4  # 🔄 Updated from v3
 
-      # 🎯 Conditional Node.js setup - skip if requested
+      # 🎯 Conditional Node.js setup - Android ยังต้องการ node_modules สำหรับ React Native!
       - name: Setup Node.js Environment
-        if: inputs.skip_node_setup == false
         uses: actions/setup-node@v4  # 🔄 Updated from v3
         with:
           node-version: ${{ env.NODE_VERSION }}  # 🔄 Use env variable
           cache: "yarn"
 
-      # 🚀 Smart dependency handling - skip if not needed
+      # 🚀 Smart dependency handling - ใช้ cache ถ้ามี
       - name: Restore Dependencies Cache
-        if: inputs.cache_key != '' && inputs.skip_node_setup == false
+        if: inputs.cache_key != ''
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -86,10 +79,10 @@ jobs:
             ~/.cache/yarn
             ~/.npm
           key: ${{ inputs.cache_key }}
-          fail-on-cache-miss: true
+          fail-on-cache-miss: false  # ถ้าไม่มี cache ก็ install ปกติ
 
       - name: Install Node Dependencies
-        if: inputs.cache_key == '' && inputs.skip_node_setup == false
+        if: inputs.cache_key == '' || steps.cache-restore.outcome != 'success'
         run: |
           yarn install --frozen-lockfile --prefer-offline
           echo "✅ Dependencies installed: $(du -sh node_modules | cut -f1)"
@@ -113,8 +106,8 @@ jobs:
               cp -r ./js-bundle/assets/* android/app/src/main/res/ 2>/dev/null || true
             fi
             echo "✅ Using pre-built JS bundle"
-          elif [ "${{ inputs.skip_node_setup }}" = "false" ]; then
-            # Create new bundle (only if Node.js is available)
+          else
+            # Create new bundle (node_modules is available)
             echo "🔄 Creating fresh JS bundle..."
             npx react-native bundle \
               --platform android \
@@ -124,9 +117,6 @@ jobs:
               --assets-dest android/app/src/main/res/ \
               --minify true
             echo "✅ Fresh JS bundle created"
-          else
-            echo "❌ No JS bundle available and Node.js setup skipped!"
-            exit 1
           fi
           
           # Verify bundle
