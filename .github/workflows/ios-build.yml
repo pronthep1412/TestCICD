@@ -224,10 +224,11 @@ jobs:
 
       # 🔒 Enhanced SSH setup for Match (only when needed)
       - name: Setup SSH for Match
-        if: inputs.environment == 'release' && secrets.MATCH_PRIVATE_KEY != ''
+        if: inputs.environment == 'release'
         uses: webfactory/ssh-agent@v0.9.1
         with:
           ssh-private-key: ${{ secrets.MATCH_PRIVATE_KEY }}
+        continue-on-error: true
 
       # 🎯 Enhanced App Store Connect API setup
       - name: Setup App Store Connect API
@@ -235,6 +236,7 @@ jobs:
         run: |
           mkdir -p /tmp/ios-keys
           
+          # Check if API key is provided and setup
           if [ -n "${{ secrets.APP_STORE_CONNECT_API_KEY }}" ]; then
             echo "${{ secrets.APP_STORE_CONNECT_API_KEY }}" | base64 -d > /tmp/ios-keys/AuthKey.p8
             
@@ -247,7 +249,7 @@ jobs:
               exit 1
             fi
           else
-            echo "⚠️ No App Store Connect API key provided"
+            echo "⚠️ No App Store Connect API key provided - some deployment features may not work"
           fi
 
       # 🚀 Enhanced iOS Debug Build
