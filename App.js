@@ -7,7 +7,7 @@ export default function App() {
       <View style={{ justifyContent: 'space-around', height: '100%' }}>
         <View
           style={{
-            backgroundColor: 'red',
+            backgroundColor: 'blue',
             width: '100%',
             height: 100,
             alignItems: 'center',
