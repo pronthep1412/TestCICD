@@ -89,7 +89,7 @@ jobs:
 
       # 🚀 Smart dependency handling - iOS ต้องมี node_modules
       - name: Restore Dependencies Cache
-        id: restore-deps-cache  # ⭐ เพิ่ม id
+        id: restore-deps-cache  # ✅ เพิ่ม id
         if: inputs.cache_key != ''
         uses: actions/cache/restore@v4
         with:
@@ -98,14 +98,10 @@ jobs:
             ~/.cache/yarn
             ~/.npm
           key: ${{ inputs.cache_key }}
-          fail-on-cache-miss: false
 
       - name: Install Node Dependencies
-        # แก้ไข condition
         if: inputs.cache_key == '' || steps.restore-deps-cache.outputs.cache-hit != 'true'
-        run: |
-          yarn install --frozen-lockfile --prefer-offline
-          echo "✅ Dependencies installed: $(du -sh node_modules | cut -f1)"
+        run: yarn install --frozen-lockfile
 
       # 🎯 Smart JS bundle handling
       - name: Download Pre-built JS Bundle

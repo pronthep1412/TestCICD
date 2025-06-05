@@ -20,7 +20,7 @@ jobs:
       target_branch: ${{ steps.branch.outputs.name }}
       coverage: ${{ steps.coverage.outputs.percentage }}
       should_build: ${{ steps.changes.outputs.should_build }}
-      cache_key: ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}
+      cache_key: ${{ steps.cache-info.outputs.key }}
       cache_hit: ${{ steps.cache-deps.outputs.cache-hit }}
       
     steps:
@@ -45,6 +45,20 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: yarn
 
+      - name: Generate Cache Key
+        id: cache-info
+        run: |
+          # สร้าง cache key อย่างปลอดภัย
+          if [ -f "yarn.lock" ]; then
+            LOCK_HASH=$(sha256sum yarn.lock | cut -d' ' -f1 | cut -c1-12)
+          else
+            LOCK_HASH="no-lock-$(date +%Y%m%d)"
+          fi
+          
+          CACHE_KEY="${{ runner.os }}-deps-${LOCK_HASH}"
+          echo "key=$CACHE_KEY" >> $GITHUB_OUTPUT
+          echo "🔑 Cache key: $CACHE_KEY"
+
       - name: Cache Dependencies
         id: cache-deps
         uses: actions/cache@v4
@@ -52,8 +66,8 @@ jobs:
           path: |
             node_modules
             ~/.cache/yarn
-            ~/.npm  # เพิ่ม npm cache ด้วย
-          key: ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}
+            ~/.npm
+          key: ${{ steps.cache-info.outputs.key }}
           restore-keys: |
             ${{ runner.os }}-deps-
 
