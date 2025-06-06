@@ -1,11 +1,8 @@
+# ios/fastlane/Matchfile
 git_url("git@github.com:IBCHUB/ios-certificates.git")
 storage_mode("git")
 app_identifier(["test.cicd.appibc"])
 username("dev3@ibusiness.co.th")
 team_id("8MBHTZFZWC")
-
-# ลบบรรทัดนี้ออก เพื่อให้ Fastfile กำหนด type เอง
-# type("development")
-
 skip_confirmation(true)
-verbose(true)  # เพิ่มเพื่อดู log ละเอียดขึ้น
+verbose(true)

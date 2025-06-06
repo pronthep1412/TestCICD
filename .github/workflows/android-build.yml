@@ -71,6 +71,7 @@ jobs:
 
       # 🚀 Smart dependency handling - ใช้ cache ถ้ามี
       - name: Restore Dependencies Cache
+        id: restore-deps-cache  # ✅ เพิ่ม id
         if: inputs.cache_key != ''
         uses: actions/cache/restore@v4
         with:
@@ -79,13 +80,10 @@ jobs:
             ~/.cache/yarn
             ~/.npm
           key: ${{ inputs.cache_key }}
-          fail-on-cache-miss: false  # ถ้าไม่มี cache ก็ install ปกติ
 
       - name: Install Node Dependencies
-        if: inputs.cache_key == '' || steps.restore-cache.outcome != 'success'
-        run: |
-          yarn install --frozen-lockfile --prefer-offline
-          echo "✅ Dependencies installed: $(du -sh node_modules | cut -f1)"
+        if: inputs.cache_key == '' || steps.restore-deps-cache.outputs.cache-hit != 'true'
+        run: yarn install --frozen-lockfile
 
       # 🎯 Smart JS bundle handling
       - name: Download Pre-built JS Bundle
@@ -148,6 +146,22 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/app/build.gradle', 'android/build.gradle') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
+
+      - name: Cache Restore Debug
+        run: |
+          echo "🔍 Cache Restore Debug:"
+          echo "- Input Cache Key: ${{ inputs.cache_key }}"
+          echo "- Cache Hit: ${{ steps.restore-deps-cache.outputs.cache-hit }}"
+          echo "- Cache Primary Key: ${{ steps.restore-deps-cache.outputs.cache-primary-key }}"
+          echo "- Cache Matched Key: ${{ steps.restore-deps-cache.outputs.cache-matched-key }}"
+          
+          # Check if node_modules exists
+          if [ -d "node_modules" ]; then
+            echo "- node_modules restored: $(du -sh node_modules | cut -f1)"
+            echo "- node_modules files: $(find node_modules -type f | wc -l) files"
+          else
+            echo "- node_modules: Not restored"
+          fi
 
       # 🔒 Enhanced keystore setup with validation
       - name: Setup Android Keystore

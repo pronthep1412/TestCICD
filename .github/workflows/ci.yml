@@ -20,7 +20,8 @@ jobs:
       target_branch: ${{ steps.branch.outputs.name }}
       coverage: ${{ steps.coverage.outputs.percentage }}
       should_build: ${{ steps.changes.outputs.should_build }}
-      cache_key: ${{ steps.cache-deps.outputs.cache-primary-key }}
+      cache_key: ${{ steps.cache-info.outputs.key }}
+      cache_hit: ${{ steps.cache-deps.outputs.cache-hit }}
       
     steps:
       - name: Checkout
@@ -44,6 +45,20 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: yarn
 
+      - name: Generate Cache Key
+        id: cache-info
+        run: |
+          # สร้าง cache key อย่างปลอดภัย
+          if [ -f "yarn.lock" ]; then
+            LOCK_HASH=$(sha256sum yarn.lock | cut -d' ' -f1 | cut -c1-12)
+          else
+            LOCK_HASH="no-lock-$(date +%Y%m%d)"
+          fi
+          
+          CACHE_KEY="${{ runner.os }}-deps-${LOCK_HASH}"
+          echo "key=$CACHE_KEY" >> $GITHUB_OUTPUT
+          echo "🔑 Cache key: $CACHE_KEY"
+
       - name: Cache Dependencies
         id: cache-deps
         uses: actions/cache@v4
@@ -51,12 +66,34 @@ jobs:
           path: |
             node_modules
             ~/.cache/yarn
-          key: ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}
+            ~/.npm
+          key: ${{ steps.cache-info.outputs.key }}
           restore-keys: |
             ${{ runner.os }}-deps-
 
+      - name: Cache Debug Info
+        run: |
+          echo "🔍 Cache Debug Information:"
+          echo "- Cache Key: ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}"
+          echo "- Cache Hit: ${{ steps.cache-deps.outputs.cache-hit }}"
+          echo "- Cache Primary Key: ${{ steps.cache-deps.outputs.cache-primary-key }}"
+          echo "- Cache Matched Key: ${{ steps.cache-deps.outputs.cache-matched-key }}"
+          echo "- Yarn Lock Hash: ${{ hashFiles('yarn.lock') }}"
+          
+          # Check node_modules
+          if [ -d "node_modules" ]; then
+            echo "- node_modules exists: $(du -sh node_modules | cut -f1)"
+            echo "- node_modules files: $(find node_modules -type f | wc -l) files"
+          else
+            echo "- node_modules: Not found"
+          fi
+
       - name: Install Dependencies
-        run: yarn install --frozen-lockfile
+        # เพิ่มเงื่อนไข check cache hit
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          yarn install --frozen-lockfile
+          echo "✅ Dependencies installed: $(du -sh node_modules | cut -f1)"
 
       - name: Generate PR Version
         id: version
