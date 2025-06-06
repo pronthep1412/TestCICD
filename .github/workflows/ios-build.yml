@@ -294,6 +294,10 @@ jobs:
             exit 1
           fi
 
+      - name: Check MATCH_PASSWORD
+        run: |
+          echo "MATCH_PASSWORD is set to: ${{ secrets.MATCH_PASSWORD }}"
+
       # 🚀 Enhanced Release Build (No Deploy)
       - name: Build iOS Release (No Deploy)
         if: inputs.environment == 'release' && inputs.publish == false
