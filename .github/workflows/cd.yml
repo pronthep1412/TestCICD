@@ -145,13 +145,13 @@ jobs:
               IS_PRODUCTION="true"
               ;;
             "preprod")
-              VERSION="$PACKAGE_VERSION-beta.$RUN_NUMBER"
+              VERSION="$PACKAGE_VERSION"
               VERSION_CODE=$((2000000 + RUN_NUMBER))  # Staging: 2M+
               ENVIRONMENT="staging"
               IS_PRODUCTION="false"
               ;;
             *)
-              VERSION="$PACKAGE_VERSION-alpha.$RUN_NUMBER"
+              VERSION="$PACKAGE_VERSION"
               VERSION_CODE=$((1000000 + RUN_NUMBER))  # Development: 1M+
               ENVIRONMENT="development"
               IS_PRODUCTION="false"
