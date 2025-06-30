@@ -71,6 +71,7 @@ jobs:
 
       # 🚀 Smart dependency handling - ใช้ cache ถ้ามี
       - name: Restore Dependencies Cache
+        id: restore-deps-cache  # ✅ เพิ่ม id
         if: inputs.cache_key != ''
         uses: actions/cache/restore@v4
         with:
@@ -79,13 +80,10 @@ jobs:
             ~/.cache/yarn
             ~/.npm
           key: ${{ inputs.cache_key }}
-          fail-on-cache-miss: false  # ถ้าไม่มี cache ก็ install ปกติ
 
       - name: Install Node Dependencies
-        if: inputs.cache_key == '' || steps.restore-cache.outcome != 'success'
-        run: |
-          yarn install --frozen-lockfile --prefer-offline
-          echo "✅ Dependencies installed: $(du -sh node_modules | cut -f1)"
+        if: inputs.cache_key == '' || steps.restore-deps-cache.outputs.cache-hit != 'true'
+        run: yarn install --frozen-lockfile
 
       # 🎯 Smart JS bundle handling
       - name: Download Pre-built JS Bundle
@@ -149,6 +147,22 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Cache Restore Debug
+        run: |
+          echo "🔍 Cache Restore Debug:"
+          echo "- Input Cache Key: ${{ inputs.cache_key }}"
+          echo "- Cache Hit: ${{ steps.restore-deps-cache.outputs.cache-hit }}"
+          echo "- Cache Primary Key: ${{ steps.restore-deps-cache.outputs.cache-primary-key }}"
+          echo "- Cache Matched Key: ${{ steps.restore-deps-cache.outputs.cache-matched-key }}"
+          
+          # Check if node_modules exists
+          if [ -d "node_modules" ]; then
+            echo "- node_modules restored: $(du -sh node_modules | cut -f1)"
+            echo "- node_modules files: $(find node_modules -type f | wc -l) files"
+          else
+            echo "- node_modules: Not restored"
+          fi
+
       # 🔒 Enhanced keystore setup with validation
       - name: Setup Android Keystore
         run: |
@@ -178,27 +192,18 @@ jobs:
         run: chmod +x android/gradlew
 
       # 🎯 Enhanced version update with validation
-      - name: Update App Version
+      - name: Update Version in package.json
         run: |
-          cd android
-          echo "📱 Updating app version..."
-          echo "Target version: ${{ inputs.version }} (code: ${{ inputs.version_code }})"
+          echo "📝 Updating package.json version to: ${{ inputs.version }}"
           
-          # Backup original
-          cp app/build.gradle app/build.gradle.backup
+          # Update package.json (central source of truth)
+          npm version ${{ inputs.version }} --no-git-tag-version
           
-          # Update build.gradle with new version
-          sed -i 's/versionName ".*"/versionName "${{ inputs.version }}"/' app/build.gradle
-          sed -i 's/versionCode [0-9]*/versionCode ${{ inputs.version_code }}/' app/build.gradle
+          # Verify update
+          echo "✅ Updated package.json:"
+          grep '"version":' package.json
           
-          # Verify the changes
-          echo "✅ Updated build.gradle:"
-          grep -E "(versionName|versionCode)" app/build.gradle
-          
-          # Validate version format
-          if ! echo "${{ inputs.version }}" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+'; then
-            echo "⚠️ Warning: Version format might be non-standard"
-          fi
+          echo "Version will be applied to build.gradle by Fastlane"
 
       # 🚀 Enhanced build with better error handling
       - name: Build Android Debug
@@ -273,6 +278,10 @@ jobs:
           GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
           GITHUB_REF_NAME: ${{ inputs.branch }}
+          # ✅ Send version info to Fastlane
+          VERSION_NAME: ${{ inputs.version }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          SKIP_AUTO_VERSION: "true"
         run: |
           cd android
           echo "🚀 Deploying to Google Play Store..."

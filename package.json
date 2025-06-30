@@ -1,6 +1,6 @@
 {
   "name": "TestCICD",
-  "version": "0.0.52",
+  "version": "67000.0.5",
   "private": true,
   "scripts": {
     "preci": "rm -fr node_modules",
@@ -12,11 +12,7 @@
     "prepare": "husky",
     "test:ci": "jest --coverage --watchAll=false",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
-    "type-check": "tsc --noEmit",
-    "build:bundle:android": "react-native bundle --platform android --dev false --entry-file index.js --bundle-output ./build/index.android.bundle --assets-dest ./build/",
-    "build:bundle:ios": "react-native bundle --platform ios --dev false --entry-file index.js --bundle-output ./build/index.ios.bundle --assets-dest ./build/",
-    "analyze:size": "yarn build:bundle:android && ls -lh ./build/index.android.bundle",
-    "analyze:deps": "npx react-native-bundle-visualizer --format json --output ./build/bundle-analysis.json"
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "react": "19.0.0",

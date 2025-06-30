@@ -20,7 +20,8 @@ jobs:
       version_code: ${{ steps.version.outputs.version_code }}
       branch: ${{ steps.branch.outputs.name }}
       is_production: ${{ steps.branch.outputs.is_production }}
-      cache_key: ${{ steps.cache-deps.outputs.cache-primary-key }}
+      cache_key: ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}
+      cache_hit: ${{ steps.cache-deps.outputs.cache-hit }}
       coverage: ${{ steps.coverage.outputs.percentage }}
     
     steps:
@@ -43,15 +44,33 @@ jobs:
           path: |
             node_modules
             ~/.cache/yarn
-            ~/.npm
-          key: ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}-${{ github.run_number }}
+            ~/.npm  # เพิ่ม npm cache ด้วย
+          key: ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}
           restore-keys: |
-            ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}
             ${{ runner.os }}-deps-
 
-      - name: Install Dependencies
+      - name: Cache Debug Info
         run: |
-          yarn install --frozen-lockfile --prefer-offline
+          echo "🔍 Cache Debug Information:"
+          echo "- Cache Key: ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}"
+          echo "- Cache Hit: ${{ steps.cache-deps.outputs.cache-hit }}"
+          echo "- Cache Primary Key: ${{ steps.cache-deps.outputs.cache-primary-key }}"
+          echo "- Cache Matched Key: ${{ steps.cache-deps.outputs.cache-matched-key }}"
+          echo "- Yarn Lock Hash: ${{ hashFiles('yarn.lock') }}"
+          
+          # Check node_modules
+          if [ -d "node_modules" ]; then
+            echo "- node_modules exists: $(du -sh node_modules | cut -f1)"
+            echo "- node_modules files: $(find node_modules -type f | wc -l) files"
+          else
+            echo "- node_modules: Not found"
+          fi
+
+      - name: Install Dependencies
+        # เพิ่มเงื่อนไข check cache hit
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          yarn install --frozen-lockfile
           echo "✅ Dependencies installed: $(du -sh node_modules | cut -f1)"
 
       # Quality Checks (keeping existing logic)
@@ -117,24 +136,39 @@ jobs:
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           RUN_NUMBER=${{ github.run_number }}
           
-          # Generate version name
-          if [ "$BRANCH_NAME" = "master" ]; then
-            VERSION="$PACKAGE_VERSION"
-            BASE_CODE=2000000
-          elif [ "$BRANCH_NAME" = "preprod" ]; then
-            VERSION="$PACKAGE_VERSION-beta.$RUN_NUMBER"
-            BASE_CODE=1500000
-          else
-            VERSION="$PACKAGE_VERSION-alpha.$RUN_NUMBER"
-            BASE_CODE=1000000
-          fi
-          
-          # Generate unique version code
-          VERSION_CODE=$((BASE_CODE + RUN_NUMBER))
+          # 🎯 UNIFIED VERSION STRATEGY: Same version code for both iOS & Android
+          case "$BRANCH_NAME" in
+            "master")
+              VERSION="$PACKAGE_VERSION"
+              VERSION_CODE=$((3000000 + RUN_NUMBER))  # Production: 3M+
+              ENVIRONMENT="production"
+              IS_PRODUCTION="true"
+              ;;
+            "preprod")
+              VERSION="$PACKAGE_VERSION-beta.$RUN_NUMBER"
+              VERSION_CODE=$((2000000 + RUN_NUMBER))  # Staging: 2M+
+              ENVIRONMENT="staging"
+              IS_PRODUCTION="false"
+              ;;
+            *)
+              VERSION="$PACKAGE_VERSION-alpha.$RUN_NUMBER"
+              VERSION_CODE=$((1000000 + RUN_NUMBER))  # Development: 1M+
+              ENVIRONMENT="development"
+              IS_PRODUCTION="false"
+              ;;
+          esac
           
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
-          echo "Generated version: $VERSION (code: $VERSION_CODE)"
+          echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "is_production=$IS_PRODUCTION" >> $GITHUB_OUTPUT
+          
+          echo "📋 Unified Version Strategy:"
+          echo "- App Version: $VERSION"
+          echo "- Version Code: $VERSION_CODE (same for iOS & Android)"
+          echo "- Environment: $ENVIRONMENT"
+          echo "- Run Number: $RUN_NUMBER"
 
       # 🆕 Create JS bundles for sharing (same as ci.yml)
       - name: Create JS Bundles for Sharing

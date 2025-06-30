@@ -6,106 +6,31 @@ platform :ios do
   before_all do
     setup_circle_ci if ENV['CI']
     ensure_bundle_exec
-    auto_update_version if ENV['GITHUB_RUN_NUMBER']
+    
+    # ✅ Apply version from ENV (like Flutter)
+    apply_version_from_env if ENV['CI']
   end
 
-  # ✨ เพิ่ม: Auto version management
-  private_lane :auto_update_version do
-    begin
-      # ดึง version จาก package.json
-      package_json_path = File.expand_path('../../package.json')
-      if File.exist?(package_json_path)
-        package_json = JSON.parse(File.read(package_json_path))
-        new_version = package_json['version']
-      else
-        UI.error("package.json not found, using default version")
-        new_version = "1.0.0"
-      end
-      
-      # ใช้ GitHub run number เป็น build number
-      build_number = ENV['GITHUB_RUN_NUMBER'] || "1"
-      branch = ENV['GITHUB_REF_NAME'] || 'develop'
-      
-      # อัพเดท iOS version
-      increment_version_number(
-        version_number: new_version,
-        xcodeproj: "TestCICD.xcodeproj"
-      )
-      
-      increment_build_number(
-        build_number: build_number,
-        xcodeproj: "TestCICD.xcodeproj"
-      )
-      
-      UI.success("✅ Auto updated iOS version:")
-      UI.success("   CFBundleShortVersionString: #{new_version}")
-      UI.success("   CFBundleVersion: #{build_number}")
-      UI.success("   branch: #{branch}")
-      
-    rescue => e
-      UI.error("❌ Failed to auto update version: #{e.message}")
-      UI.error("Continuing with existing version...")
-    end
-  end
-
-  # ✨ เพิ่ม: Manual version management
-  lane :set_version do |options|
-    version = options[:version] || prompt(text: "Enter version (e.g., 1.2.3):")
-    build = options[:build] || prompt(text: "Enter build number (e.g., 123):")
+  private_lane :apply_version_from_env do
+    version_name = ENV['VERSION_NAME'] || "1.0.0"
+    version_code = ENV['VERSION_CODE'] || "1"
+    
+    UI.message("📋 Applying version from GitHub Actions workflow:")
+    UI.message("   CFBundleShortVersionString: #{version_name}")
+    UI.message("   CFBundleVersion: #{version_code}")
+    UI.message("   Source: GitHub Actions (#{ENV['GITHUB_REF_NAME']})")
     
     increment_version_number(
-      version_number: version,
+      version_number: version_name,
       xcodeproj: "TestCICD.xcodeproj"
     )
     
     increment_build_number(
-      build_number: build,
+      build_number: version_code,
       xcodeproj: "TestCICD.xcodeproj"
     )
     
-    UI.success("✅ Manually set iOS version:")
-    UI.success("   CFBundleShortVersionString: #{version}")
-    UI.success("   CFBundleVersion: #{build}")
-  end
-
-  lane :bump_version do |options|
-    type = options[:type] || "patch"
-    
-    # อ่าน version ปัจจุบัน
-    current_version = get_version_number(xcodeproj: "TestCICD.xcodeproj")
-    current_build = get_build_number(xcodeproj: "TestCICD.xcodeproj").to_i
-    
-    # Parse semantic version
-    version_parts = current_version.split('.').map(&:to_i)
-    
-    case type
-    when "major"
-      version_parts[0] += 1
-      version_parts[1] = 0
-      version_parts[2] = 0
-    when "minor"
-      version_parts[1] += 1
-      version_parts[2] = 0
-    when "patch"
-      version_parts[2] += 1
-    end
-    
-    new_version = version_parts.join('.')
-    new_build = current_build + 1
-    
-    increment_version_number(
-      version_number: new_version,
-      xcodeproj: "TestCICD.xcodeproj"
-    )
-    
-    increment_build_number(
-      build_number: new_build.to_s,
-      xcodeproj: "TestCICD.xcodeproj"
-    )
-    
-    UI.success("✅ Bumped #{type} version:")
-    UI.success("   #{current_version} -> #{new_version}")
-    UI.success("   build: #{current_build} -> #{new_build}")
+    UI.success("✅ Version applied from GitHub Actions")
   end
 
   # 🚀 Deployment lanes (เดิม + ปรับปรุง)
