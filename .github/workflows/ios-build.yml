@@ -256,18 +256,18 @@ jobs:
             echo "⚠️ No App Store Connect API key provided - some deployment features may not work"
           fi
 
-      - name: Update Version in package.json
-        run: |
-          echo "📝 Updating package.json version to: ${{ inputs.version }}"
+      # - name: Update Version in package.json
+      #   run: |
+      #     echo "📝 Updating package.json version to: ${{ inputs.version }}"
           
-          # Update package.json (central source of truth)
-          npm version ${{ inputs.version }} --no-git-tag-version
+      #     # Update package.json (central source of truth)
+      #     npm version ${{ inputs.version }} --no-git-tag-version
           
-          # Verify update
-          echo "✅ Updated package.json:"
-          grep '"version":' package.json
+      #     # Verify update
+      #     echo "✅ Updated package.json:"
+      #     grep '"version":' package.json
           
-          echo "Version will be applied to iOS project by Fastlane"
+      #     echo "Version will be applied to iOS project by Fastlane"
           
       # 🚀 Enhanced iOS Debug Build
       - name: Build iOS Debug
