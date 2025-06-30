@@ -20,7 +20,7 @@ jobs:
       version_code: ${{ steps.version.outputs.version_code }}
       branch: ${{ steps.branch.outputs.name }}
       is_production: ${{ steps.branch.outputs.is_production }}
-      cache_key: ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}
+      cache_key: ${{ steps.cache-info.outputs.key }}
       cache_hit: ${{ steps.cache-deps.outputs.cache-hit }}
       coverage: ${{ steps.coverage.outputs.percentage }}
     
