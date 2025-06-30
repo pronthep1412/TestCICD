@@ -192,27 +192,18 @@ jobs:
         run: chmod +x android/gradlew
 
       # 🎯 Enhanced version update with validation
-      - name: Update App Version
+      - name: Update Version in package.json
         run: |
-          cd android
-          echo "📱 Updating app version..."
-          echo "Target version: ${{ inputs.version }} (code: ${{ inputs.version_code }})"
+          echo "📝 Updating package.json version to: ${{ inputs.version }}"
           
-          # Backup original
-          cp app/build.gradle app/build.gradle.backup
+          # Update package.json (central source of truth)
+          npm version ${{ inputs.version }} --no-git-tag-version
           
-          # Update build.gradle with new version
-          sed -i 's/versionName ".*"/versionName "${{ inputs.version }}"/' app/build.gradle
-          sed -i 's/versionCode [0-9]*/versionCode ${{ inputs.version_code }}/' app/build.gradle
+          # Verify update
+          echo "✅ Updated package.json:"
+          grep '"version":' package.json
           
-          # Verify the changes
-          echo "✅ Updated build.gradle:"
-          grep -E "(versionName|versionCode)" app/build.gradle
-          
-          # Validate version format
-          if ! echo "${{ inputs.version }}" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+'; then
-            echo "⚠️ Warning: Version format might be non-standard"
-          fi
+          echo "Version will be applied to build.gradle by Fastlane"
 
       # 🚀 Enhanced build with better error handling
       - name: Build Android Debug
@@ -287,6 +278,10 @@ jobs:
           GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
           GITHUB_REF_NAME: ${{ inputs.branch }}
+          # ✅ Send version info to Fastlane
+          VERSION_NAME: ${{ inputs.version }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          SKIP_AUTO_VERSION: "true"
         run: |
           cd android
           echo "🚀 Deploying to Google Play Store..."

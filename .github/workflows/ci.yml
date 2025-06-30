@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       pr_version: ${{ steps.version.outputs.version }}
+      pr_version_code: ${{ steps.version.outputs.version_code }}
       target_branch: ${{ steps.branch.outputs.name }}
       coverage: ${{ steps.coverage.outputs.percentage }}
       should_build: ${{ steps.changes.outputs.should_build }}
@@ -101,8 +102,13 @@ jobs:
           PR_NUMBER=${{ github.event.number }}
           BASE_VERSION=$(node -p "require('./package.json').version")
           PR_VERSION="$BASE_VERSION-pr.$PR_NUMBER"
+          
+          # ✅ Flutter style: Consistent version code for PR testing
+          PR_VERSION_CODE=99
+          
           echo "version=$PR_VERSION" >> $GITHUB_OUTPUT
-          echo "Generated PR version: $PR_VERSION"
+          echo "version_code=$PR_VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "📋 PR Version: $PR_VERSION (code: $PR_VERSION_CODE)"
 
       - name: Set Target Branch  
         id: branch
@@ -241,7 +247,7 @@ jobs:
       environment: debug
       publish: false
       version: ${{ needs.test-and-validate.outputs.pr_version }}
-      version_code: "99"
+      version_code: ${{ needs.test-and-validate.outputs.pr_version_code }}
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
       cache_key: ${{ needs.test-and-validate.outputs.cache_key }}
       js_bundle_artifact: js-bundle-android-${{ github.run_number }}
@@ -256,7 +262,7 @@ jobs:
       environment: debug
       publish: false
       version: ${{ needs.test-and-validate.outputs.pr_version }}
-      version_code: "99"
+      version_code: ${{ needs.test-and-validate.outputs.pr_version_code }}
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
       cache_key: ${{ needs.test-and-validate.outputs.cache_key }}
       js_bundle_artifact: js-bundle-ios-${{ github.run_number }}

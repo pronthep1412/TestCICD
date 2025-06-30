@@ -256,6 +256,19 @@ jobs:
             echo "⚠️ No App Store Connect API key provided - some deployment features may not work"
           fi
 
+      - name: Update Version in package.json
+        run: |
+          echo "📝 Updating package.json version to: ${{ inputs.version }}"
+          
+          # Update package.json (central source of truth)
+          npm version ${{ inputs.version }} --no-git-tag-version
+          
+          # Verify update
+          echo "✅ Updated package.json:"
+          grep '"version":' package.json
+          
+          echo "Version will be applied to iOS project by Fastlane"
+          
       # 🚀 Enhanced iOS Debug Build
       - name: Build iOS Debug
         if: inputs.environment == 'debug'
@@ -306,6 +319,9 @@ jobs:
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
           VERSION_NUMBER: ${{ inputs.version }}
           BUILD_NUMBER: ${{ inputs.version_code }}
+          VERSION_NAME: ${{ inputs.version }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          SKIP_AUTO_VERSION: "true"
         run: |
           cd ios
           echo "🔨 Building iOS Release (No Deploy)..."
@@ -352,6 +368,9 @@ jobs:
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
           VERSION_NUMBER: ${{ inputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
+          VERSION_NAME: ${{ inputs.version }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          SKIP_AUTO_VERSION: "true"
         run: |
           cd ios
           echo "🚀 Building and deploying iOS to App Store Connect..."
