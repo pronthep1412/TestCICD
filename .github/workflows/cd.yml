@@ -257,7 +257,7 @@ jobs:
 
   finalize-production-release:
     if: needs.setup-test-and-prepare.outputs.is_production == 'true'
-    needs: [setup-test-and-prepare, deploy-android, deploy-ios, create-release-tag, bundle-analysis]
+    needs: [setup-test-and-prepare, deploy-android, deploy-ios, create-release-tag]
     runs-on: ubuntu-latest
     environment: production  # This triggers manual approval
     
@@ -306,7 +306,7 @@ jobs:
 
   #สรุปการอัพขึ้น store
   deployment-summary:
-    needs: [setup-test-and-prepare, deploy-android, deploy-ios, bundle-analysis]
+    needs: [setup-test-and-prepare, deploy-android, deploy-ios]
     if: always()
     runs-on: ubuntu-latest
     
