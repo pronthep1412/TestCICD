@@ -2,15 +2,15 @@
 default_platform(:ios)
 
 platform :ios do
-  
+
+  #Setup และ Configuration
   before_all do
     setup_circle_ci if ENV['CI']
     ensure_bundle_exec
-    
-    # ✅ Apply version from ENV (like Flutter)
     apply_version_from_env if ENV['CI']
   end
 
+  #Version Management
   private_lane :apply_version_from_env do
     version_name = ENV['VERSION_NAME'] || "1.0.0"
     version_code = ENV['VERSION_CODE'] || "1"
@@ -33,26 +33,25 @@ platform :ios do
     UI.success("✅ Version applied from GitHub Actions")
   end
 
-  # 🚀 Deployment lanes (เดิม + ปรับปรุง)
+  #สำหรับ Deployment TestFlight Internal
   lane :deploy_develop do
     UI.message("🚀 Deploying to TestFlight Internal...")
     build_and_deploy(
       groups: ["Internal Testers", "Developers"],
       skip_waiting: true
     )
-    # notify_slack("🚀 iOS Development build uploaded to TestFlight Internal!")
   end
 
+    #สำหรับ Deployment TestFlight Beta
   lane :deploy_preprod do
     UI.message("🚀 Deploying to TestFlight Beta...")
     build_and_deploy(
       groups: ["Beta Testers", "QA Team"],
       skip_waiting: false
     )
-    # notify_slack("🚀 iOS Pre-production build uploaded to TestFlight Beta!")
   end
 
-  # 🔧 แก้ไข: deploy_master ใช้ API key object
+  #สำหรับ Deployment App Store
   lane :deploy_master do
     UI.message("🎉 Deploying to App Store...")
     setup_certificates
@@ -100,9 +99,9 @@ platform :ios do
     end
     
     upload_to_app_store(upload_options)
-    # notify_slack("🎉 iOS Production build uploaded to App Store Connect!")
   end
 
+  #สำหรับ Build แต่ไม่ deploy
   lane :build_only do
     UI.message("🔨 Building iOS app...")
     setup_certificates
@@ -110,47 +109,7 @@ platform :ios do
     UI.success("✅ iOS build completed successfully!")
   end
 
-  lane :submit_for_review do
-    UI.message("📋 Submitting for App Store review...")
-    
-    upload_options = {
-      skip_binary_upload: true,
-      submit_for_review: true,
-      automatic_release: false,
-      force: true,
-      submission_information: submission_info
-    }
-    
-    # ✅ ใช้ API key object แทน path
-    api_key_id = ENV['APP_STORE_CONNECT_API_KEY_ID']
-    api_issuer_id = ENV['APP_STORE_CONNECT_API_ISSUER_ID']
-    api_key_content_base64 = ENV['APP_STORE_CONNECT_API_KEY_CONTENT']
-    
-    if api_key_id && api_issuer_id && api_key_content_base64
-      begin
-        require 'base64'
-        api_key_content = Base64.decode64(api_key_content_base64)
-        
-        app_store_connect_api_key = {
-          key_id: api_key_id,
-          issuer_id: api_issuer_id,
-          key: api_key_content,
-          duration: 1200,
-          in_house: false
-        }
-        
-        upload_options[:api_key] = app_store_connect_api_key
-        UI.success("✅ Using API key for App Store review submission")
-      rescue => e
-        UI.error("❌ API key setup failed: #{e.message}")
-      end
-    end
-    
-    upload_to_app_store(upload_options)
-    # notify_slack("📋 iOS app submitted for App Store review!")
-  end
-
-  # 🔧 แก้ไข: setup_certificates ไม่ใช้ API key path อีกแล้ว
+  #จัดการ certificates
   private_lane :setup_certificates do
     UI.message("🔐 Setting up certificates...")
     
@@ -163,6 +122,7 @@ platform :ios do
     UI.success("✅ Certificates setup completed")
   end
 
+  #Build app
   private_lane :build_release_app do
     build_app(
       scheme: "TestCICD",
@@ -181,7 +141,7 @@ platform :ios do
     )
   end
 
-  # 🔧 แก้ไข: build_and_deploy ใช้ API key object
+  #Core deployment logic
   private_lane :build_and_deploy do |options|
     setup_certificates
     build_release_app
@@ -239,47 +199,10 @@ platform :ios do
     upload_to_testflight(upload_options)
   end
 
-  private_lane :submission_info do
-    {
-      add_id_info_limits_tracking: true,
-      add_id_info_serves_ads: false,
-      add_id_info_tracks_action: true,
-      add_id_info_tracks_install: true,
-      add_id_info_uses_idfa: true,
-      content_rights_has_rights: true,
-      content_rights_contains_third_party_content: true,
-      export_compliance_platform: 'ios',
-      export_compliance_compliance_required: false,
-      export_compliance_encryption_updated: false,
-      export_compliance_uses_encryption: false,
-      export_compliance_is_exempt: false,
-      export_compliance_contains_third_party_cryptography: false,
-      export_compliance_contains_proprietary_cryptography: false,
-      export_compliance_available_on_french_store: false
-    }
-  end
-
-  private_lane :notify_slack do |message|
-    return unless ENV["SLACK_URL"]
-    
-    begin
-      slack(
-        message: message,
-        channel: "#releases",
-        webhook_url: ENV["SLACK_URL"],
-        username: "iOS CI/CD",
-        icon_emoji: ":apple:"
-      )
-    rescue => e
-      UI.error("Failed to send Slack notification: #{e.message}")
-    end
-  end
-
-  # Error handling
+  #Error handling
   error do |lane, exception|
     error_message = "❌ iOS deployment failed in lane '#{lane}': #{exception.message}"
     UI.error(error_message)
-    # notify_slack(error_message) if defined?(notify_slack)
     raise exception
   end
 end

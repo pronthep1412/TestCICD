@@ -1,15 +1,15 @@
-# android/fastlane/Fastfile - Fixed version management
+# android/fastlane/Fastfile - Optimized Version
 default_platform(:android)
 
 platform :android do
   
+  #Setup และ Configuration
   before_all do
     ensure_bundle_exec
-    
-    # ✅ Apply version from ENV (like Flutter)
     apply_version_from_env if ENV['CI']
   end
 
+  #Version Management
   private_lane :apply_version_from_env do
     version_name = ENV['VERSION_NAME'] || "1.0.0"
     version_code = ENV['VERSION_CODE'] || "1"
@@ -19,51 +19,70 @@ platform :android do
     UI.message("   versionCode: #{version_code}")
     UI.message("   Source: GitHub Actions (#{ENV['GITHUB_REF_NAME']})")
     
+    # ✅ ใช้ Gradle properties แทน sed (ปลอดภัยกว่า)
     gradle_file = "../app/build.gradle"
     
-    # Update build.gradle
-    sh("sed -i 's/versionName \".*\"/versionName \"#{version_name}\"/' #{gradle_file}")
-    sh("sed -i 's/versionCode [0-9]*/versionCode #{version_code}/' #{gradle_file}")
-    
-    # Verify update
-    gradle_content = File.read(gradle_file)
-    actual_name = gradle_content.match(/versionName "([^"]+)"/)[1]
-    actual_code = gradle_content.match(/versionCode (\d+)/)[1]
-    
-    UI.success("✅ Applied to build.gradle:")
-    UI.success("   versionName \"#{actual_name}\"")
-    UI.success("   versionCode #{actual_code}")
+    begin
+      # อ่านไฟล์และแทนที่
+      gradle_content = File.read(gradle_file)
+      
+      # Update versionName and versionCode
+      gradle_content.gsub!(/versionName\s+"[^"]+"/, "versionName \"#{version_name}\"")
+      gradle_content.gsub!(/versionCode\s+\d+/, "versionCode #{version_code}")
+      
+      # เขียนกลับไปยังไฟล์
+      File.write(gradle_file, gradle_content)
+      
+      # Verify การเปลี่ยนแปลง
+      updated_content = File.read(gradle_file)
+      actual_name = updated_content.match(/versionName "([^"]+)"/)[1]
+      actual_code = updated_content.match(/versionCode (\d+)/)[1]
+      
+      UI.success("✅ Applied to build.gradle:")
+      UI.success("   versionName \"#{actual_name}\"")
+      UI.success("   versionCode #{actual_code}")
+      
+    rescue => e
+      UI.error("❌ Failed to update build.gradle: #{e.message}")
+      UI.message("⚠️ Falling back to sed command...")
+      
+      # Fallback ใช้ sed
+      sh("sed -i 's/versionName \".*\"/versionName \"#{version_name}\"/' #{gradle_file}")
+      sh("sed -i 's/versionCode [0-9]*/versionCode #{version_code}/' #{gradle_file}")
+      
+      UI.success("✅ Updated using sed command")
+    end
   end
 
-  # 🚀 Deployment lanes (เดิม + ปรับปรุง)
+  #สำหรับ Deployment Internal Testing
   lane :deploy_develop do
     UI.message("🚀 Deploying to Internal Testing...")
     build_and_deploy(
       track: 'internal',
       release_status: 'draft'
     )
-    # notify_slack("🚀 Android Development build deployed to Internal Testing!")
   end
 
+  #สำหรับ Deployment Alpha Testing
   lane :deploy_preprod do
     UI.message("🚀 Deploying to Alpha Testing...")
     build_and_deploy(
       track: 'alpha',
       release_status: 'draft'
     )
-    # notify_slack("🚀 Android Pre-production build deployed to Alpha!")
   end
 
+  #สำหรับ Deployment Production
   lane :deploy_master do
     UI.message("🎉 Deploying to Production...")
     build_and_deploy(
       track: 'production',
       release_status: 'draft',
-      rollout: '0.1'  # 10% rollout for safety
+      rollout: '0.1'  # 10% rollout เพื่อความปลอดภัย
     )
-    # notify_slack("🎉 Android Production build deployed with 10% rollout!")
   end
 
+  #สำหรับ Build แต่ไม่ deploy
   lane :build_only do
     UI.message("🔨 Building release bundle...")
     gradle(
@@ -73,7 +92,7 @@ platform :android do
     UI.success("✅ Build completed successfully!")
   end
 
-  # 🔧 Private lanes
+  #Core deployment logic
   private_lane :build_and_deploy do |options|
     # Clean และ build
     gradle(
@@ -81,44 +100,43 @@ platform :android do
       print_command: false
     )
     
+    # ตรวจสอบว่ามี AAB file หรือไม่
+    aab_path = "app/build/outputs/bundle/release/app-release.aab"
+    unless File.exist?(aab_path)
+      UI.user_error!("❌ AAB file not found at #{aab_path}")
+    end
+    
+    # ตรวจสอบว่ามี Google Play key หรือไม่
+    json_key_path = "google-play-key.json"
+    unless File.exist?(json_key_path)
+      UI.user_error!("❌ Google Play service account key not found at #{json_key_path}")
+    end
+    
     # Upload to Play Store
-    upload_to_play_store(
+    upload_options = {
       track: options[:track],
-      json_key: "google-play-key.json",
-      aab: "app/build/outputs/bundle/release/app-release.aab",
+      json_key: json_key_path,
+      aab: aab_path,
       release_status: options[:release_status],
-      rollout: options[:rollout],
       package_name: "test.cicd.appibc",
       skip_upload_metadata: true,
       skip_upload_images: true,
       skip_upload_screenshots: true,
       timeout: 300
-    )
+    }
+    
+    # เพิ่ม rollout สำหรับ production เท่านั้น
+    upload_options[:rollout] = options[:rollout] if options[:rollout]
+    
+    upload_to_play_store(upload_options)
     
     UI.success("✅ Successfully uploaded to #{options[:track]} track!")
   end
 
-  private_lane :notify_slack do |message|
-    return unless ENV["SLACK_URL"]
-    
-    begin
-      slack(
-        message: message,
-        channel: "#releases",
-        webhook_url: ENV["SLACK_URL"],
-        username: "Android CI/CD",
-        icon_emoji: ":robot_face:"
-      )
-    rescue => e
-      UI.error("Failed to send Slack notification: #{e.message}")
-    end
-  end
-
-  # Error handling
+  #Error handling
   error do |lane, exception|
     error_message = "❌ Android deployment failed in lane '#{lane}': #{exception.message}"
     UI.error(error_message)
-    # notify_slack(error_message) if defined?(notify_slack)
     raise exception
   end
 end
