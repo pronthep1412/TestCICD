@@ -20,13 +20,6 @@ on:
       branch:
         required: true
         type: string
-      # 🆕 NEW: Accept pre-built dependencies cache
-      cache_key:
-        description: 'Dependencies cache key from main pipeline'
-        required: false
-        type: string
-        default: ''
-      # 🆕 NEW: Accept pre-built JS bundle
       js_bundle_artifact:
         description: 'Pre-built JavaScript bundle artifact name'
         required: false
@@ -53,57 +46,35 @@ on:
         required: true
 
 env:
-  NODE_VERSION: 22.11.0  # 🔄 Updated to latest LTS
+  NODE_VERSION: 22.11.0
   DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
 
 jobs:
   build-ios:
-    runs-on: macos-15  # Latest stable macOS
-    timeout-minutes: 40  # 🔄 Reduced from 45 (optimizations)
+    runs-on: macos-15
+    timeout-minutes: 30
     
-    # Simple environment logic (unchanged)
+    #กำหนด GitHub Environment ที่จะใช้ในการ deploy
     environment: 
       name: ${{ inputs.branch == 'master' && 'production' || inputs.branch }}
     
     steps:
+      #ดึงโค้ดใน git มาประมวลผล 
       - name: Checkout Repository
-        uses: actions/checkout@v4  # 🔄 Updated from v3
+        uses: actions/checkout@v4 
 
-      # 🎯 System information for debugging
-      - name: System Information
-        run: |
-          echo "🖥️ System Information:"
-          echo "- macOS: $(sw_vers -productVersion)"
-          echo "- Xcode: $(xcodebuild -version | head -1)"
-          echo "- Available Xcode versions:"
-          ls /Applications/ | grep Xcode || echo "  Only default Xcode available"
-          echo "- Ruby: $(ruby --version)"
-          echo "- Available space: $(df -h . | tail -1 | awk '{print $4}')"
-
-      # 🎯 Conditional Node.js setup - iOS ยังต้องการ node_modules สำหรับ CocoaPods!
+      #ติดตั้ง node
       - name: Setup Node.js Environment
-        uses: actions/setup-node@v4  # 🔄 Updated from v3
+        uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}  # 🔄 Use env variable
+          node-version: ${{ env.NODE_VERSION }}
           cache: "yarn"
 
-      # 🚀 Smart dependency handling - iOS ต้องมี node_modules
-      - name: Restore Dependencies Cache
-        id: restore-deps-cache  # ✅ เพิ่ม id
-        if: inputs.cache_key != ''
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            node_modules
-            ~/.cache/yarn
-            ~/.npm
-          key: ${{ inputs.cache_key }}
-
+      #ติดตั้ง module install
       - name: Install Node Dependencies
-        if: inputs.cache_key == '' || steps.restore-deps-cache.outputs.cache-hit != 'true'
         run: yarn install --frozen-lockfile
 
-      # 🎯 Smart JS bundle handling
+      #ดาวน์โหลด JavaScript bundle ที่ถูก build ไว้แล้ว
       - name: Download Pre-built JS Bundle
         if: inputs.js_bundle_artifact != ''
         uses: actions/download-artifact@v4
@@ -111,6 +82,7 @@ jobs:
           name: ${{ inputs.js_bundle_artifact }}
           path: ./js-bundle/
 
+      #เตรียม JavaScript bundle ถ้ามีแล้วใช้ทันที ถ้าไม่มี build ใหม่
       - name: Setup JS Bundle for iOS
         run: |
           mkdir -p ios/bundle
@@ -144,46 +116,15 @@ jobs:
             exit 1
           fi
 
-      # 🔄 Enhanced Ruby setup
+      #เตรียม Ruby environment เพื่อใช้งาน Fastlane
       - name: Setup Ruby for Fastlane
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.2'  # 🔄 Updated from 3.1
+          ruby-version: '3.2'
           bundler-cache: true
           working-directory: ios
 
-      # 🚀 Enhanced iOS dependencies cache
-      - name: Cache iOS Build Dependencies
-        uses: actions/cache@v4  # 🔄 Updated from v3
-        with:
-          path: |
-            ios/Pods
-            ios/DerivedData
-            ios/build
-            ~/Library/Caches/CocoaPods
-            ~/Library/Developer/Xcode/DerivedData
-            ~/.cocoapods
-          key: ${{ runner.os }}-ios-${{ hashFiles('ios/Podfile.lock', 'yarn.lock', 'ios/TestCICD.xcodeproj/project.pbxproj') }}
-          restore-keys: |
-            ${{ runner.os }}-ios-
-
-      - name: Cache Restore Debug
-        run: |
-          echo "🔍 Cache Restore Debug:"
-          echo "- Input Cache Key: ${{ inputs.cache_key }}"
-          echo "- Cache Hit: ${{ steps.restore-deps-cache.outputs.cache-hit }}"
-          echo "- Cache Primary Key: ${{ steps.restore-deps-cache.outputs.cache-primary-key }}"
-          echo "- Cache Matched Key: ${{ steps.restore-deps-cache.outputs.cache-matched-key }}"
-          
-          # Check if node_modules exists
-          if [ -d "node_modules" ]; then
-            echo "- node_modules restored: $(du -sh node_modules | cut -f1)"
-            echo "- node_modules files: $(find node_modules -type f | wc -l) files"
-          else
-            echo "- node_modules: Not restored"
-          fi
-
-      # 🎯 Enhanced Pod installation
+      #รัน pod install
       - name: Install CocoaPods Dependencies
         run: |
           cd ios
@@ -211,7 +152,7 @@ jobs:
             exit 1
           fi
 
-      # 🔄 Enhanced Xcode setup
+      #Select Xcode Version, Clear Derived Data, Verification & Logging
       - name: Setup Xcode Environment
         run: |
           # Ensure we're using the default Xcode
@@ -226,7 +167,7 @@ jobs:
           echo "- Version: $(xcodebuild -version)"
           echo "- SDKs: $(xcodebuild -showsdks | grep iOS | tail -1)"
 
-      # 🔒 Enhanced SSH setup for Match (only when needed)
+      #ตั้งค่า SSH authentication เพื่อเข้าถึง Match repository
       - name: Setup SSH for Match
         if: inputs.environment == 'release'
         uses: webfactory/ssh-agent@v0.9.1
@@ -234,7 +175,7 @@ jobs:
           ssh-private-key: ${{ secrets.MATCH_PRIVATE_KEY }}
         continue-on-error: true
 
-      # 🎯 Enhanced App Store Connect API setup
+      #ตั้งค่า API authentication เพื่อเชื่อมต่อกับ App Store Connect สำหรับ deploy iOS app
       - name: Setup App Store Connect API
         if: inputs.environment == 'release'
         run: |
@@ -256,20 +197,7 @@ jobs:
             echo "⚠️ No App Store Connect API key provided - some deployment features may not work"
           fi
 
-      # - name: Update Version in package.json
-      #   run: |
-      #     echo "📝 Updating package.json version to: ${{ inputs.version }}"
-          
-      #     # Update package.json (central source of truth)
-      #     npm version ${{ inputs.version }} --no-git-tag-version
-          
-      #     # Verify update
-      #     echo "✅ Updated package.json:"
-      #     grep '"version":' package.json
-          
-      #     echo "Version will be applied to iOS project by Fastlane"
-          
-      # 🚀 Enhanced iOS Debug Build
+      #build iOS app ในโหมด debug เมื่อ environment เป็น debug
       - name: Build iOS Debug
         if: inputs.environment == 'debug'
         run: |
@@ -307,11 +235,7 @@ jobs:
             exit 1
           fi
 
-      - name: Check MATCH_PASSWORD
-        run: |
-          echo "MATCH_PASSWORD is set to: ${{ secrets.MATCH_PASSWORD }}"
-
-      # 🚀 Enhanced Release Build (No Deploy)
+      #build iOS app ในโหมด release แต่ไม่ deploy ไปยัง App Store
       - name: Build iOS Release (No Deploy)
         if: inputs.environment == 'release' && inputs.publish == false
         env:
@@ -356,7 +280,7 @@ jobs:
             exit 1
           fi
 
-      # 🚀 Enhanced Build and Deploy
+      #build iOS app ในโหมด release และ deploy ไปยัง App Store
       - name: Build and Deploy to TestFlight/App Store
         if: inputs.environment == 'release' && inputs.publish == true
         env:
@@ -401,7 +325,7 @@ jobs:
             exit 1
           fi
 
-      # 🎯 Enhanced artifacts upload
+      #เก็บ iOS build outputs เป็น artifacts เมื่อ build release แต่ไม่ deploy
       - name: Upload iOS Build Artifacts
         if: inputs.publish == false && inputs.environment == 'release'
         uses: actions/upload-artifact@v4  # 🔄 Updated from v3
@@ -415,7 +339,7 @@ jobs:
           retention-days: 7
           compression-level: 6
 
-      # 🎯 Enhanced build summary
+      #สรุปผลการ build 
       - name: Generate Build Summary
         if: always()
         run: |
@@ -487,7 +411,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "*Build completed on $(date)*" >> $GITHUB_STEP_SUMMARY
 
-      # 🧹 Cleanup sensitive files
+      #ลบไฟล์ที่มีข้อมูลลับ หลังจาก build/deploy เสร็จสิ้น
       - name: Cleanup Sensitive Files
         if: always()
         run: |

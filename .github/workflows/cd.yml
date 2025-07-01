@@ -9,10 +9,10 @@ on:
       - preprod
 
 env:
-  NODE_VERSION: 22.11.0  # 🔄 Updated to match other workflows
+  NODE_VERSION: 22.11.0
 
 jobs:
-  # Common setup, testing, and bundle creation (similar to ci.yml but for CD)
+  
   setup-test-and-prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -28,10 +28,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 2
 
       - name: Use Node.js
-        uses: actions/setup-node@v4  # 🔄 Updated from v3
+        uses: actions/setup-node@v4 
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: yarn
