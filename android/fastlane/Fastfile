@@ -1,4 +1,4 @@
-# android/fastlane/Fastfile - Optimized Version
+# android/fastlane/Fastfile - Fixed version management
 default_platform(:android)
 
 platform :android do
@@ -19,39 +19,20 @@ platform :android do
     UI.message("   versionCode: #{version_code}")
     UI.message("   Source: GitHub Actions (#{ENV['GITHUB_REF_NAME']})")
     
-    # ✅ ใช้ Gradle properties แทน sed (ปลอดภัยกว่า)
     gradle_file = "../app/build.gradle"
     
-    begin
-      # อ่านไฟล์และแทนที่
-      gradle_content = File.read(gradle_file)
-      
-      # Update versionName and versionCode
-      gradle_content.gsub!(/versionName\s+"[^"]+"/, "versionName \"#{version_name}\"")
-      gradle_content.gsub!(/versionCode\s+\d+/, "versionCode #{version_code}")
-      
-      # เขียนกลับไปยังไฟล์
-      File.write(gradle_file, gradle_content)
-      
-      # Verify การเปลี่ยนแปลง
-      updated_content = File.read(gradle_file)
-      actual_name = updated_content.match(/versionName "([^"]+)"/)[1]
-      actual_code = updated_content.match(/versionCode (\d+)/)[1]
-      
-      UI.success("✅ Applied to build.gradle:")
-      UI.success("   versionName \"#{actual_name}\"")
-      UI.success("   versionCode #{actual_code}")
-      
-    rescue => e
-      UI.error("❌ Failed to update build.gradle: #{e.message}")
-      UI.message("⚠️ Falling back to sed command...")
-      
-      # Fallback ใช้ sed
-      sh("sed -i 's/versionName \".*\"/versionName \"#{version_name}\"/' #{gradle_file}")
-      sh("sed -i 's/versionCode [0-9]*/versionCode #{version_code}/' #{gradle_file}")
-      
-      UI.success("✅ Updated using sed command")
-    end
+    # Update build.gradle
+    sh("sed -i 's/versionName \".*\"/versionName \"#{version_name}\"/' #{gradle_file}")
+    sh("sed -i 's/versionCode [0-9]*/versionCode #{version_code}/' #{gradle_file}")
+    
+    # Verify update
+    gradle_content = File.read(gradle_file)
+    actual_name = gradle_content.match(/versionName "([^"]+)"/)[1]
+    actual_code = gradle_content.match(/versionCode (\d+)/)[1]
+    
+    UI.success("✅ Applied to build.gradle:")
+    UI.success("   versionName \"#{actual_name}\"")
+    UI.success("   versionCode #{actual_code}")
   end
 
   #สำหรับ Deployment Internal Testing
@@ -78,7 +59,7 @@ platform :android do
     build_and_deploy(
       track: 'production',
       release_status: 'draft',
-      rollout: '0.1'  # 10% rollout เพื่อความปลอดภัย
+      rollout: '0.1'  # 10% rollout for safety
     )
   end
 
@@ -100,35 +81,19 @@ platform :android do
       print_command: false
     )
     
-    # ตรวจสอบว่ามี AAB file หรือไม่
-    aab_path = "app/build/outputs/bundle/release/app-release.aab"
-    unless File.exist?(aab_path)
-      UI.user_error!("❌ AAB file not found at #{aab_path}")
-    end
-    
-    # ตรวจสอบว่ามี Google Play key หรือไม่
-    json_key_path = "google-play-key.json"
-    unless File.exist?(json_key_path)
-      UI.user_error!("❌ Google Play service account key not found at #{json_key_path}")
-    end
-    
     # Upload to Play Store
-    upload_options = {
+    upload_to_play_store(
       track: options[:track],
-      json_key: json_key_path,
-      aab: aab_path,
+      json_key: "google-play-key.json",
+      aab: "app/build/outputs/bundle/release/app-release.aab",
       release_status: options[:release_status],
+      rollout: options[:rollout],
       package_name: "test.cicd.appibc",
       skip_upload_metadata: true,
       skip_upload_images: true,
       skip_upload_screenshots: true,
       timeout: 300
-    }
-    
-    # เพิ่ม rollout สำหรับ production เท่านั้น
-    upload_options[:rollout] = options[:rollout] if options[:rollout]
-    
-    upload_to_play_store(upload_options)
+    )
     
     UI.success("✅ Successfully uploaded to #{options[:track]} track!")
   end
