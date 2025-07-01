@@ -20,115 +20,29 @@ jobs:
       version_code: ${{ steps.version.outputs.version_code }}
       branch: ${{ steps.branch.outputs.name }}
       is_production: ${{ steps.branch.outputs.is_production }}
-      cache_key: ${{ steps.cache-info.outputs.key }}
-      cache_hit: ${{ steps.cache-deps.outputs.cache-hit }}
       coverage: ${{ steps.coverage.outputs.percentage }}
     
     steps:
+      #ดึงโค้ดใน git มาประมวลผล 
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
+      #ติดตั้ง node
       - name: Use Node.js
         uses: actions/setup-node@v4 
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: yarn
 
-      # 🚀 Enhanced dependency caching
-      - name: Cache Dependencies
-        id: cache-deps
-        uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            ~/.cache/yarn
-            ~/.npm  # เพิ่ม npm cache ด้วย
-          key: ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-deps-
-
-      - name: Cache Debug Info
-        run: |
-          echo "🔍 Cache Debug Information:"
-          echo "- Cache Key: ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}"
-          echo "- Cache Hit: ${{ steps.cache-deps.outputs.cache-hit }}"
-          echo "- Cache Primary Key: ${{ steps.cache-deps.outputs.cache-primary-key }}"
-          echo "- Cache Matched Key: ${{ steps.cache-deps.outputs.cache-matched-key }}"
-          echo "- Yarn Lock Hash: ${{ hashFiles('yarn.lock') }}"
-          
-          # Check node_modules
-          if [ -d "node_modules" ]; then
-            echo "- node_modules exists: $(du -sh node_modules | cut -f1)"
-            echo "- node_modules files: $(find node_modules -type f | wc -l) files"
-          else
-            echo "- node_modules: Not found"
-          fi
-
+      #ติดตั้ง module install
       - name: Install Dependencies
-        # เพิ่มเงื่อนไข check cache hit
-        if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           yarn install --frozen-lockfile
           echo "✅ Dependencies installed: $(du -sh node_modules | cut -f1)"
 
-      # Quality Checks (keeping existing logic)
-      - name: Code Linting
-        run: yarn lint
-
-      - name: Type Checking
-        run: yarn type-check
-
-      # 🆕 Enhanced security audit
-      - name: Security Audit
-        run: |
-          echo "## 🔍 Security Audit Results" >> $GITHUB_STEP_SUMMARY
-          if yarn audit --audit-level moderate --json > audit-results.json 2>/dev/null; then
-            echo "✅ No security vulnerabilities found" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ Security vulnerabilities detected - check logs for details" >> $GITHUB_STEP_SUMMARY
-            yarn audit --audit-level moderate || true
-          fi
-
-      - name: Unit & Integration Tests with Coverage
-        run: yarn test:ci
-
-      # 🆕 Extract coverage for reporting
-      - name: Extract Coverage Percentage
-        id: coverage
-        run: |
-          COVERAGE="0"
-          
-          if [ -f "coverage/coverage-summary.json" ]; then
-            COVERAGE=$(node -p "
-              try {
-                const summary = JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json'));
-                summary.total.lines.pct || 0;
-              } catch(e) { 0; }
-            " 2>/dev/null || echo "0")
-          fi
-          
-          # Validate และ fallback
-          if ! echo "$COVERAGE" | grep -q '^[0-9]*\.*[0-9]*$'; then
-            COVERAGE="0"
-          fi
-          
-          if [ -z "$COVERAGE" ] || [ "$COVERAGE" = "" ]; then
-            COVERAGE="0"
-          fi
-          
-          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
-          echo "Coverage: $COVERAGE%"
-
-      - name: Set Branch Info
-        id: branch
-        run: |
-          BRANCH_NAME=${{ github.ref_name }}
-          echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
-          echo "is_production=$([[ '$BRANCH_NAME' == 'master' ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
-          echo "Branch: $BRANCH_NAME (Production: $([[ '$BRANCH_NAME' == 'master' ]] && echo 'Yes' || echo 'No'))"
-
+      #สร้าง version number อัพ store
       - name: Generate Version and Version Code
         id: version
         run: |
@@ -170,7 +84,81 @@ jobs:
           echo "- Environment: $ENVIRONMENT"
           echo "- Run Number: $RUN_NUMBER"
 
-      # 🆕 Create JS bundles for sharing (same as ci.yml)
+      #เก็บข้อมูลว่า PR นี้จะ merge เข้า branch ไหน
+      - name: Set Branch Info
+        id: branch
+        run: |
+          BRANCH_NAME=${{ github.ref_name }}
+          echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "is_production=$([[ '$BRANCH_NAME' == 'master' ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "Branch: $BRANCH_NAME (Production: $([[ '$BRANCH_NAME' == 'master' ]] && echo 'Yes' || echo 'No'))"
+
+      ##################################################
+      #เซตนี้เป็น Quality Gates เพื่อตรวจสอบคุณภาพโค้ดก่อน merge
+      - name: Code Linting
+        run: yarn lint
+
+      - name: Type Checking
+        run: yarn type-check
+
+      - name: Security Audit
+        run: |
+          echo "## 🔍 Security Audit Results" >> $GITHUB_STEP_SUMMARY
+          if yarn audit --audit-level moderate --json > audit-results.json 2>/dev/null; then
+            echo "✅ No security vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Security vulnerabilities detected - check logs for details" >> $GITHUB_STEP_SUMMARY
+            yarn audit --audit-level moderate || true
+          fi
+      ##################################################
+      ##################################################
+
+      ##################################################
+      #เซตนี้เป็น Testing Pipeline เพื่อตรวจสอบว่าโค้ดทำงานถูกต้องและครอบคลุมเพียงใด
+      - name: Unit & Integration Tests with Coverage
+        run: yarn test:ci
+
+      - name: Extract Coverage Percentage
+        id: coverage
+        run: |
+          COVERAGE="0"
+          
+          if [ -f "coverage/coverage-summary.json" ]; then
+            COVERAGE=$(node -p "
+              try {
+                const summary = JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json'));
+                summary.total.lines.pct || 0;
+              } catch(e) { 0; }
+            " 2>/dev/null || echo "0")
+          fi
+          
+          # Validate และ fallback
+          if ! echo "$COVERAGE" | grep -q '^[0-9]*\.*[0-9]*$'; then
+            COVERAGE="0"
+          fi
+          
+          if [ -z "$COVERAGE" ] || [ "$COVERAGE" = "" ]; then
+            COVERAGE="0"
+          fi
+          
+          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "Coverage: $COVERAGE%"
+      ##################################################
+      ##################################################
+
+      #การแสดงผล + วิเคราะห์ coverage หลังจาก Testing Pipeline เสร็จแล้ว
+      - name: Upload Coverage Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cd-coverage-reports-${{ github.run_number }}
+          path: |
+            coverage/
+            jest-coverage/
+          retention-days: 7
+
+      ##################################################
+      #เอาไว้สร้าง JavaScript bundles ล่วงหน้า แล้วแชร์ให้ Android/iOS build jobs ใช้ร่วมกัน
       - name: Create JS Bundles for Sharing
         run: |
           echo "📦 Creating JavaScript bundles for deployment..."
@@ -197,7 +185,6 @@ jobs:
           
           echo "✅ Bundles created successfully"
 
-      # 🆕 Upload bundles for builds
       - name: Upload Android Bundle
         uses: actions/upload-artifact@v4
         with:
@@ -211,76 +198,12 @@ jobs:
           name: cd-js-bundle-ios-${{ github.run_number }}
           path: bundles/ios/
           retention-days: 1
+      ##################################################
+      ##################################################
 
-      # 🆕 Coverage and test reports
-      - name: Upload Coverage Reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cd-coverage-reports-${{ github.run_number }}
-          path: |
-            coverage/
-            jest-coverage/
-          retention-days: 7
-
-      # 🆕 Build summary
-      - name: Setup Summary
-        run: |
-          echo "## 🚀 Continuous Deployment - Setup Phase" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch:** ${{ steps.branch.outputs.name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version Code:** ${{ steps.version.outputs.version_code }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Production:** ${{ steps.branch.outputs.is_production }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Coverage:** ${{ steps.coverage.outputs.percentage }}%" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ✅ Completed Tasks" >> $GITHUB_STEP_SUMMARY
-          echo "- Dependencies installed and cached" >> $GITHUB_STEP_SUMMARY
-          echo "- Code quality checks passed" >> $GITHUB_STEP_SUMMARY
-          echo "- Unit tests completed" >> $GITHUB_STEP_SUMMARY
-          echo "- JS bundles created and uploaded" >> $GITHUB_STEP_SUMMARY
-
-  # 🆕 Bundle analysis (same as ci.yml)
-  bundle-analysis:
-    needs: setup-test-and-prepare
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    continue-on-error: true
-    
-    steps:
-      - name: Download Android Bundle
-        uses: actions/download-artifact@v4
-        with:
-          name: cd-js-bundle-android-${{ github.run_number }}
-          path: ./bundle-check/
-
-      - name: Bundle Size Analysis
-        run: |
-          echo "## 📦 Production Bundle Analysis" >> $GITHUB_STEP_SUMMARY
-          
-          if [ -f "./bundle-check/index.android.bundle" ]; then
-            bundle_size=$(ls -lh ./bundle-check/index.android.bundle | awk '{print $5}')
-            bundle_bytes=$(wc -c < ./bundle-check/index.android.bundle)
-            
-            echo "- **✅ Bundle Analysis:** Completed" >> $GITHUB_STEP_SUMMARY
-            echo "- **Android Bundle Size:** $bundle_size" >> $GITHUB_STEP_SUMMARY
-            
-            # Size evaluation with stricter production standards
-            if [ "$bundle_bytes" -lt 1048576 ]; then
-              echo "- **📊 Size Status:** ✅ Excellent (< 1MB)" >> $GITHUB_STEP_SUMMARY
-            elif [ "$bundle_bytes" -lt 3145728 ]; then
-              echo "- **📊 Size Status:** ✅ Good (< 3MB)" >> $GITHUB_STEP_SUMMARY
-            elif [ "$bundle_bytes" -lt 5242880 ]; then
-              echo "- **📊 Size Status:** ⚠️ Large (< 5MB)" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "- **📊 Size Status:** ❌ Too Large (> 5MB) - Consider optimization" >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "- **⚠️ Bundle Analysis:** Bundle file not found" >> $GITHUB_STEP_SUMMARY
-          fi
-
-  # Create release tag (moved down and enhanced)
+  #สร้าง version tag ใน Git repository เมื่อมีการ deploy ไป production
   create-release-tag:
-    needs: [setup-test-and-prepare, bundle-analysis]
+    needs: [setup-test-and-prepare]
     if: needs.setup-test-and-prepare.outputs.is_production == 'true'
     runs-on: ubuntu-latest
     
@@ -306,7 +229,7 @@ jobs:
             echo "✅ Created and pushed tag: $TAG_NAME"
           fi
 
-  # Android deployment with optimization
+  # Build testing for Android - with bundle sharing
   deploy-android:
     needs: setup-test-and-prepare
     uses: ./.github/workflows/android-build.yml
@@ -316,12 +239,10 @@ jobs:
       version: ${{ needs.setup-test-and-prepare.outputs.version }}
       version_code: ${{ needs.setup-test-and-prepare.outputs.version_code }}
       branch: ${{ needs.setup-test-and-prepare.outputs.branch }}
-      # 🆕 Pass optimizations
-      cache_key: ${{ needs.setup-test-and-prepare.outputs.cache_key }}
       js_bundle_artifact: cd-js-bundle-android-${{ github.run_number }}
     secrets: inherit
 
-  # iOS deployment with optimization
+  # Build testing for iOS - with bundle sharing
   deploy-ios:
     needs: setup-test-and-prepare
     uses: ./.github/workflows/ios-build.yml
@@ -331,12 +252,9 @@ jobs:
       version: ${{ needs.setup-test-and-prepare.outputs.version }}
       version_code: ${{ needs.setup-test-and-prepare.outputs.version_code }}
       branch: ${{ needs.setup-test-and-prepare.outputs.branch }}
-      # 🆕 Pass optimizations
-      cache_key: ${{ needs.setup-test-and-prepare.outputs.cache_key }}
       js_bundle_artifact: cd-js-bundle-ios-${{ github.run_number }}
     secrets: inherit
 
-  # Production deployment with manual approval (enhanced)
   finalize-production-release:
     if: needs.setup-test-and-prepare.outputs.is_production == 'true'
     needs: [setup-test-and-prepare, deploy-android, deploy-ios, create-release-tag, bundle-analysis]
@@ -344,6 +262,7 @@ jobs:
     environment: production  # This triggers manual approval
     
     steps:
+      #Download, Changelog, Marketing
       - name: Create GitHub Release
         uses: actions/create-release@v1
         env:
@@ -375,7 +294,7 @@ jobs:
             ### 🔗 Links
             - [Commit Details](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
             - [Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-
+      #Monitoring, Debugging
       - name: Production Release Summary
         run: |
           echo "## 🎉 Production Release Completed" >> $GITHUB_STEP_SUMMARY
@@ -385,7 +304,7 @@ jobs:
           echo "- **iOS Deploy:** ${{ needs.deploy-ios.result == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **GitHub Release:** ✅ Created" >> $GITHUB_STEP_SUMMARY
 
-  # 🆕 Deployment summary for all branches
+  #สรุปการอัพขึ้น store
   deployment-summary:
     needs: [setup-test-and-prepare, deploy-android, deploy-ios, bundle-analysis]
     if: always()

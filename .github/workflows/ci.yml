@@ -126,7 +126,7 @@ jobs:
       ##################################################
       ##################################################
 
-        #การแสดงผล + วิเคราะห์ coverage หลังจาก Testing Pipeline เสร็จแล้ว
+      #การแสดงผล + วิเคราะห์ coverage หลังจาก Testing Pipeline เสร็จแล้ว
       - name: Coverage Report
         run: |
           echo "## 📊 Test Coverage Report" >> $GITHUB_STEP_SUMMARY
@@ -235,7 +235,7 @@ jobs:
       js_bundle_artifact: js-bundle-ios-${{ github.run_number }}
     secrets: inherit
 
-  #สรุปการ build
+  #สรุปการ build test
   pr-summary:
     needs: [test-and-validate, build-android-test, build-ios-test]
     if: always()
