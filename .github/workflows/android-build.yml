@@ -20,13 +20,6 @@ on:
       branch:
         required: true
         type: string
-      # 🆕 NEW: Accept pre-built dependencies cache
-      cache_key:
-        description: 'Dependencies cache key from main pipeline'
-        required: false
-        type: string
-        default: ''
-      # 🆕 NEW: Accept pre-built JS bundle
       js_bundle_artifact:
         description: 'Pre-built JavaScript bundle artifact name'
         required: false
@@ -47,45 +40,34 @@ on:
         required: true
 
 env:
-  NODE_VERSION: 22.11.0  # 🔄 Updated to latest LTS
+  NODE_VERSION: 22.11.0
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 25  # 🔄 Reduced from 30 (optimizations)
+    timeout-minutes: 30
     
-    # Simple environment logic (unchanged)
+    #กำหนด GitHub Environment ที่จะใช้ในการ deploy
     environment: 
       name: ${{ inputs.branch == 'master' && 'production' || inputs.branch }}
     
     steps:
+      #ดึงโค้ดใน git มาประมวลผล 
       - name: Checkout Repository
-        uses: actions/checkout@v4  # 🔄 Updated from v3
+        uses: actions/checkout@v4
 
-      # 🎯 Conditional Node.js setup - Android ยังต้องการ node_modules สำหรับ React Native!
+      #ติดตั้ง node
       - name: Setup Node.js Environment
-        uses: actions/setup-node@v4  # 🔄 Updated from v3
+        uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}  # 🔄 Use env variable
+          node-version: ${{ env.NODE_VERSION }}
           cache: "yarn"
 
-      # 🚀 Smart dependency handling - ใช้ cache ถ้ามี
-      - name: Restore Dependencies Cache
-        id: restore-deps-cache  # ✅ เพิ่ม id
-        if: inputs.cache_key != ''
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            node_modules
-            ~/.cache/yarn
-            ~/.npm
-          key: ${{ inputs.cache_key }}
-
+      #ติดตั้ง module install
       - name: Install Node Dependencies
-        if: inputs.cache_key == '' || steps.restore-deps-cache.outputs.cache-hit != 'true'
         run: yarn install --frozen-lockfile
 
-      # 🎯 Smart JS bundle handling
+      #ดาวน์โหลด JavaScript bundle ที่ถูก build ไว้แล้ว
       - name: Download Pre-built JS Bundle
         if: inputs.js_bundle_artifact != ''
         uses: actions/download-artifact@v4
@@ -93,6 +75,7 @@ jobs:
           name: ${{ inputs.js_bundle_artifact }}
           path: ./js-bundle/
 
+      #เตรียม JavaScript bundle ถ้ามีแล้วใช้ทันที ถ้าไม่มี build ใหม่
       - name: Setup JS Bundle
         run: |
           mkdir -p android/app/src/main/assets
@@ -126,44 +109,15 @@ jobs:
             exit 1
           fi
 
-      # 🔄 Enhanced Ruby setup
+      #เตรียม Ruby environment เพื่อใช้งาน Fastlane
       - name: Setup Ruby for Fastlane
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.2'  # 🔄 Updated from 3.1
+          ruby-version: '3.2'
           bundler-cache: true
           working-directory: android
 
-      # 🚀 Enhanced Gradle cache
-      - name: Cache Gradle Dependencies
-        uses: actions/cache@v4  # 🔄 Updated from v3
-        with:
-          path: |
-            ~/.gradle/wrapper
-            ~/.gradle/caches
-            android/.gradle
-            android/app/build/intermediates
-          key: ${{ runner.os }}-gradle-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/app/build.gradle', 'android/build.gradle') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Cache Restore Debug
-        run: |
-          echo "🔍 Cache Restore Debug:"
-          echo "- Input Cache Key: ${{ inputs.cache_key }}"
-          echo "- Cache Hit: ${{ steps.restore-deps-cache.outputs.cache-hit }}"
-          echo "- Cache Primary Key: ${{ steps.restore-deps-cache.outputs.cache-primary-key }}"
-          echo "- Cache Matched Key: ${{ steps.restore-deps-cache.outputs.cache-matched-key }}"
-          
-          # Check if node_modules exists
-          if [ -d "node_modules" ]; then
-            echo "- node_modules restored: $(du -sh node_modules | cut -f1)"
-            echo "- node_modules files: $(find node_modules -type f | wc -l) files"
-          else
-            echo "- node_modules: Not restored"
-          fi
-
-      # 🔒 Enhanced keystore setup with validation
+      #เตรียม keystore สำหรับอัพขึ้น store
       - name: Setup Android Keystore
         run: |
           echo "🔑 Setting up Android keystore..."
@@ -187,25 +141,12 @@ jobs:
           EOF
           
           echo "✅ Keystore properties configured"
-
+      
+      #ให้สิทธิ์ execute กับไฟล์ gradlew เมื่อ git clone file permissions จะเป็น default (644)
       - name: Make Gradlew Executable
         run: chmod +x android/gradlew
 
-      # 🎯 Enhanced version update with validation
-      # - name: Update Version in package.json
-      #   run: |
-      #     echo "📝 Updating package.json version to: ${{ inputs.version }}"
-          
-      #     # Update package.json (central source of truth)
-      #     npm version ${{ inputs.version }} --no-git-tag-version
-          
-      #     # Verify update
-      #     echo "✅ Updated package.json:"
-      #     grep '"version":' package.json
-          
-      #     echo "Version will be applied to build.gradle by Fastlane"
-
-      # 🚀 Enhanced build with better error handling
+      #build Android app ในโหมด debug เมื่อ environment เป็น debug
       - name: Build Android Debug
         if: inputs.environment == 'debug'
         run: |
@@ -239,6 +180,7 @@ jobs:
             exit 1
           fi
 
+      #build Android app ในโหมด production/release เมื่อ environment เป็น release
       - name: Build Android Release
         if: inputs.environment == 'release'
         run: |
@@ -271,14 +213,13 @@ jobs:
             exit 1
           fi
 
-      # 🚀 Enhanced deployment with better error handling
+      #upload และ deploy Android app ไปยัง Google Play Store เมื่อ publish = true
       - name: Deploy to Google Play Store
         if: inputs.publish == true
         env:
           GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
           GITHUB_REF_NAME: ${{ inputs.branch }}
-          # ✅ Send version info to Fastlane
           VERSION_NAME: ${{ inputs.version }}
           VERSION_CODE: ${{ inputs.version_code }}
           SKIP_AUTO_VERSION: "true"
@@ -318,10 +259,10 @@ jobs:
           # Cleanup
           rm -f google-play-key.json
 
-      # 🎯 Enhanced artifacts upload
+      # เก็บ build outputs เป็น artifacts เมื่อไม่ได้ publish
       - name: Upload Build Artifacts
         if: inputs.publish == false
-        uses: actions/upload-artifact@v4  # 🔄 Updated from v3
+        uses: actions/upload-artifact@v4
         with:
           name: android-${{ inputs.environment }}-${{ inputs.version }}-${{ github.run_number }}
           path: |
@@ -333,7 +274,7 @@ jobs:
           retention-days: 7
           compression-level: 6
 
-      # 🎯 Enhanced deployment summary
+      #สรุปผลการ build 
       - name: Generate Build Summary
         if: always()
         run: |
@@ -386,7 +327,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "*Build completed on $(date)*" >> $GITHUB_STEP_SUMMARY
 
-      # 🧹 Cleanup
+      #ลบไฟล์ที่มีข้อมูลลับ หลังจาก build/deploy เสร็จสิ้น
       - name: Cleanup Sensitive Files
         if: always()
         run: |

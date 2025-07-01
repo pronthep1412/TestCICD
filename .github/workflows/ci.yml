@@ -12,7 +12,7 @@ env:
   NODE_VERSION: 22.11.0
 
 jobs:
-  # Main testing and validation (เดิม + bundle creation)
+  
   test-and-validate:
     runs-on: ubuntu-latest
     outputs:
@@ -21,16 +21,15 @@ jobs:
       target_branch: ${{ steps.branch.outputs.name }}
       coverage: ${{ steps.coverage.outputs.percentage }}
       should_build: ${{ steps.changes.outputs.should_build }}
-      cache_key: ${{ steps.cache-info.outputs.key }}
-      cache_hit: ${{ steps.cache-deps.outputs.cache-hit }}
       
     steps:
+      #ดึงโค้ดใน git มาประมวลผล 
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 2
 
-      # 🆕 Check if we need builds
+      #โค้ดนี้เป็น GitHub Actions step ที่ใช้ตรวจสอบว่าไฟล์ที่เปลี่ยนแปลงใน commit ล่าสุดมีไฟล์ประเภทที่ต้องการ build หรือไม่
       - name: Check Changes
         id: changes
         run: |
@@ -40,76 +39,33 @@ jobs:
             echo "should_build=false" >> $GITHUB_OUTPUT
           fi
 
+      #ติดตั้ง node
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: yarn
 
-      - name: Generate Cache Key
-        id: cache-info
-        run: |
-          # สร้าง cache key อย่างปลอดภัย
-          if [ -f "yarn.lock" ]; then
-            LOCK_HASH=$(sha256sum yarn.lock | cut -d' ' -f1 | cut -c1-12)
-          else
-            LOCK_HASH="no-lock-$(date +%Y%m%d)"
-          fi
-          
-          CACHE_KEY="${{ runner.os }}-deps-${LOCK_HASH}"
-          echo "key=$CACHE_KEY" >> $GITHUB_OUTPUT
-          echo "🔑 Cache key: $CACHE_KEY"
-
-      - name: Cache Dependencies
-        id: cache-deps
-        uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            ~/.cache/yarn
-            ~/.npm
-          key: ${{ steps.cache-info.outputs.key }}
-          restore-keys: |
-            ${{ runner.os }}-deps-
-
-      - name: Cache Debug Info
-        run: |
-          echo "🔍 Cache Debug Information:"
-          echo "- Cache Key: ${{ runner.os }}-deps-${{ hashFiles('yarn.lock') }}"
-          echo "- Cache Hit: ${{ steps.cache-deps.outputs.cache-hit }}"
-          echo "- Cache Primary Key: ${{ steps.cache-deps.outputs.cache-primary-key }}"
-          echo "- Cache Matched Key: ${{ steps.cache-deps.outputs.cache-matched-key }}"
-          echo "- Yarn Lock Hash: ${{ hashFiles('yarn.lock') }}"
-          
-          # Check node_modules
-          if [ -d "node_modules" ]; then
-            echo "- node_modules exists: $(du -sh node_modules | cut -f1)"
-            echo "- node_modules files: $(find node_modules -type f | wc -l) files"
-          else
-            echo "- node_modules: Not found"
-          fi
-
+      #ติดตั้ง module install
       - name: Install Dependencies
-        # เพิ่มเงื่อนไข check cache hit
-        if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           yarn install --frozen-lockfile
           echo "✅ Dependencies installed: $(du -sh node_modules | cut -f1)"
 
+      #สร้าง version number อัพ store
       - name: Generate PR Version
         id: version
         run: |
           PR_NUMBER=${{ github.event.number }}
           BASE_VERSION=$(node -p "require('./package.json').version")
           PR_VERSION="$BASE_VERSION-pr.$PR_NUMBER"
-          
           # ✅ Flutter style: Consistent version code for PR testing
           PR_VERSION_CODE=99
-          
           echo "version=$PR_VERSION" >> $GITHUB_OUTPUT
           echo "version_code=$PR_VERSION_CODE" >> $GITHUB_OUTPUT
           echo "📋 PR Version: $PR_VERSION (code: $PR_VERSION_CODE)"
 
+      #เก็บข้อมูลว่า PR นี้จะ merge เข้า branch ไหน
       - name: Set Target Branch  
         id: branch
         run: |
@@ -117,7 +73,8 @@ jobs:
           echo "name=$TARGET_BRANCH" >> $GITHUB_OUTPUT
           echo "Target branch: $TARGET_BRANCH"
 
-      # Quality Checks (เดิม)
+      ##################################################
+      #เซตนี้เป็น Quality Gates เพื่อตรวจสอบคุณภาพโค้ดก่อน merge
       - name: Code Linting
         run: yarn lint
 
@@ -133,7 +90,11 @@ jobs:
             echo "⚠️ Security vulnerabilities detected - check logs for details" >> $GITHUB_STEP_SUMMARY
             yarn audit --audit-level moderate || true
           fi
+      ##################################################
+      ##################################################
 
+      ##################################################
+      #เซตนี้เป็น Testing Pipeline เพื่อตรวจสอบว่าโค้ดทำงานถูกต้องและครอบคลุมเพียงใด
       - name: Unit & Integration Tests with Coverage
         run: yarn test:ci
 
@@ -162,52 +123,10 @@ jobs:
           
           echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
           echo "Coverage: $COVERAGE%"
+      ##################################################
+      ##################################################
 
-      # 🆕 Create bundles once
-      - name: Create JS Bundles for Sharing
-        if: steps.changes.outputs.should_build == 'true'
-        run: |
-          echo "📦 Creating JavaScript bundles..."
-          
-          # Android bundle
-          mkdir -p bundles/android
-          npx react-native bundle \
-            --platform android \
-            --dev false \
-            --entry-file index.js \
-            --bundle-output bundles/android/index.android.bundle \
-            --assets-dest bundles/android/assets/ \
-            --minify true
-          
-          # iOS bundle  
-          mkdir -p bundles/ios
-          npx react-native bundle \
-            --platform ios \
-            --dev false \
-            --entry-file index.js \
-            --bundle-output bundles/ios/main.jsbundle \
-            --assets-dest bundles/ios/assets/ \
-            --minify true
-          
-          echo "✅ Bundles created successfully"
-
-      # 🆕 Upload bundles with SIMPLE names
-      - name: Upload Android Bundle
-        if: steps.changes.outputs.should_build == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: js-bundle-android-${{ github.run_number }}
-          path: bundles/android/
-          retention-days: 1
-
-      - name: Upload iOS Bundle
-        if: steps.changes.outputs.should_build == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: js-bundle-ios-${{ github.run_number }}
-          path: bundles/ios/
-          retention-days: 1
-
+      #การแสดงผล + วิเคราะห์ coverage หลังจาก Testing Pipeline เสร็จแล้ว
       - name: Coverage Report
         run: |
           echo "## 📊 Test Coverage Report" >> $GITHUB_STEP_SUMMARY
@@ -237,7 +156,57 @@ jobs:
             coverage/
             jest-coverage/
           retention-days: 7
+      ##################################################
+      ##################################################
 
+      ##################################################
+      #เอาไว้สร้าง JavaScript bundles ล่วงหน้า แล้วแชร์ให้ Android/iOS build jobs ใช้ร่วมกัน
+      - name: Create JS Bundles for Sharing
+        if: steps.changes.outputs.should_build == 'true'
+        run: |
+          echo "📦 Creating JavaScript bundles..."
+          
+          # Android bundle
+          mkdir -p bundles/android
+          npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file index.js \
+            --bundle-output bundles/android/index.android.bundle \
+            --assets-dest bundles/android/assets/ \
+            --minify true
+          
+          # iOS bundle  
+          mkdir -p bundles/ios
+          npx react-native bundle \
+            --platform ios \
+            --dev false \
+            --entry-file index.js \
+            --bundle-output bundles/ios/main.jsbundle \
+            --assets-dest bundles/ios/assets/ \
+            --minify true
+          
+          echo "✅ Bundles created successfully"
+
+      - name: Upload Android Bundle
+        if: steps.changes.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: js-bundle-android-${{ github.run_number }}
+          path: bundles/android/
+          retention-days: 1
+
+      - name: Upload iOS Bundle
+        if: steps.changes.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: js-bundle-ios-${{ github.run_number }}
+          path: bundles/ios/
+          retention-days: 1
+      ##################################################
+      ##################################################
+
+  
   # Build testing for Android - with bundle sharing
   build-android-test:
     needs: test-and-validate
@@ -249,7 +218,6 @@ jobs:
       version: ${{ needs.test-and-validate.outputs.pr_version }}
       version_code: ${{ needs.test-and-validate.outputs.pr_version_code }}
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
-      cache_key: ${{ needs.test-and-validate.outputs.cache_key }}
       js_bundle_artifact: js-bundle-android-${{ github.run_number }}
     secrets: inherit
 
@@ -264,53 +232,12 @@ jobs:
       version: ${{ needs.test-and-validate.outputs.pr_version }}
       version_code: ${{ needs.test-and-validate.outputs.pr_version_code }}
       branch: ${{ needs.test-and-validate.outputs.target_branch }}
-      cache_key: ${{ needs.test-and-validate.outputs.cache_key }}
       js_bundle_artifact: js-bundle-ios-${{ github.run_number }}
     secrets: inherit
 
-  # Bundle analysis (simplified)
-  bundle-analysis:
-    needs: test-and-validate
-    if: needs.test-and-validate.outputs.should_build == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    continue-on-error: true
-    
-    steps:
-      - name: Download Android Bundle
-        uses: actions/download-artifact@v4
-        with:
-          name: js-bundle-android-${{ github.run_number }}
-          path: ./bundle-check/
-
-      - name: Bundle Size Analysis
-        run: |
-          echo "## 📦 Bundle Analysis" >> $GITHUB_STEP_SUMMARY
-          
-          if [ -f "./bundle-check/index.android.bundle" ]; then
-            bundle_size=$(ls -lh ./bundle-check/index.android.bundle | awk '{print $5}')
-            bundle_bytes=$(wc -c < ./bundle-check/index.android.bundle)
-            
-            echo "- **✅ Bundle Analysis:** Completed" >> $GITHUB_STEP_SUMMARY
-            echo "- **Android Bundle Size:** $bundle_size" >> $GITHUB_STEP_SUMMARY
-            
-            # Size evaluation
-            if [ "$bundle_bytes" -lt 1048576 ]; then
-              echo "- **📊 Size Status:** ✅ Excellent (< 1MB)" >> $GITHUB_STEP_SUMMARY
-            elif [ "$bundle_bytes" -lt 5242880 ]; then
-              echo "- **📊 Size Status:** ✅ Good (< 5MB)" >> $GITHUB_STEP_SUMMARY
-            elif [ "$bundle_bytes" -lt 10485760 ]; then
-              echo "- **📊 Size Status:** ⚠️ Large (< 10MB)" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "- **📊 Size Status:** ❌ Very Large (> 10MB)" >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "- **⚠️ Bundle Analysis:** Bundle file not found" >> $GITHUB_STEP_SUMMARY
-          fi
-
-  # PR Summary (simplified)
+  #สรุปการ build test
   pr-summary:
-    needs: [test-and-validate, build-android-test, build-ios-test, bundle-analysis]
+    needs: [test-and-validate, build-android-test, build-ios-test]
     if: always()
     runs-on: ubuntu-latest
     
@@ -319,54 +246,16 @@ jobs:
         run: |
           echo "## 🚀 Pull Request Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **PR Version:** ${{ needs.test-and-validate.outputs.pr_version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Target Branch:** ${{ needs.test-and-validate.outputs.target_branch }}" >> $GITHUB_STEP_SUMMARY
-          
-          # Handle coverage
-          COVERAGE="${{ needs.test-and-validate.outputs.coverage }}"
-          echo "- **Test Coverage:** ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📊 Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "- **Linting:** ${{ needs.test-and-validate.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Type Check:** ${{ needs.test-and-validate.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Unit Tests:** ${{ needs.test-and-validate.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Security Audit:** ${{ needs.test-and-validate.result == 'success' && '✅ Completed' || '⚠️ Issues Found' }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📱 Build Results" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "${{ needs.test-and-validate.outputs.should_build }}" = "true" ]; then
-            echo "- **Android Build:** ${{ needs.build-android-test.result == 'success' && '✅ Passed' || needs.build-android-test.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY  
-            echo "- **iOS Build:** ${{ needs.build-ios-test.result == 'success' && '✅ Passed' || needs.build-ios-test.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
-            echo "- **Bundle Analysis:** ${{ needs.bundle-analysis.result == 'success' && '✅ Completed' || '⚠️ Partial' }}" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- **Builds:** ⏭️ Skipped (documentation only)" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "- **Coverage:** ${{ needs.test-and-validate.outputs.coverage }}%" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Overall Status
-          TEST_SUCCESS="${{ needs.test-and-validate.result == 'success' }}"
-          SHOULD_BUILD="${{ needs.test-and-validate.outputs.should_build }}"
-          
-          if [ "$SHOULD_BUILD" = "true" ]; then
-            ANDROID_OK="${{ needs.build-android-test.result != 'failure' }}"
-            IOS_OK="${{ needs.build-ios-test.result != 'failure' }}"
-          else
-            ANDROID_OK="true"
-            IOS_OK="true"
-          fi
-          
-          if [ "$TEST_SUCCESS" = "true" ] && [ "$ANDROID_OK" = "true" ] && [ "$IOS_OK" = "true" ]; then
-            if [ "$COVERAGE" = "0" ]; then
-              echo "### ⚠️ Overall Status: Ready but No Tests" >> $GITHUB_STEP_SUMMARY
-              echo "All checks passed but no unit tests found. Consider adding tests for better code quality." >> $GITHUB_STEP_SUMMARY
-            elif [ "$(awk "BEGIN {print ($COVERAGE >= 70) ? 1 : 0}")" = "1" ]; then
-              echo "### ✅ Overall Status: Ready for Review" >> $GITHUB_STEP_SUMMARY
-              echo "All checks passed and coverage is adequate (${COVERAGE}%)." >> $GITHUB_STEP_SUMMARY
+          # Simple status check
+          if [ "${{ needs.test-and-validate.result }}" = "success" ]; then
+            if [ "${{ needs.test-and-validate.outputs.should_build }}" = "true" ]; then
+              echo "### ✅ Ready: Tests passed, builds completed" >> $GITHUB_STEP_SUMMARY
             else
-              echo "### ⚠️ Overall Status: Ready but Low Coverage" >> $GITHUB_STEP_SUMMARY
-              echo "All checks passed but consider improving test coverage (${COVERAGE}%)." >> $GITHUB_STEP_SUMMARY
+              echo "### ✅ Ready: Tests passed (builds skipped)" >> $GITHUB_STEP_SUMMARY
             fi
           else
-            echo "### ❌ Overall Status: Issues Found" >> $GITHUB_STEP_SUMMARY
-            echo "Please fix the failing checks before merging." >> $GITHUB_STEP_SUMMARY
+            echo "### ❌ Issues: Please fix failing checks" >> $GITHUB_STEP_SUMMARY
           fi
