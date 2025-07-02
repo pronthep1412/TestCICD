@@ -49,24 +49,24 @@ jobs:
           BRANCH_NAME=${{ github.ref_name }}
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           RUN_NUMBER=${{ github.run_number }}
-          
+          OFFSET_START=1000100 
           # 🎯 UNIFIED VERSION STRATEGY: Same version code for both iOS & Android
           case "$BRANCH_NAME" in
             "master")
               VERSION="$PACKAGE_VERSION"
-              VERSION_CODE=$((3000000 + RUN_NUMBER))  # Production: 3M+
+              VERSION_CODE=$((OFFSET_START + ${{ github.run_number }}))
               ENVIRONMENT="production"
               IS_PRODUCTION="true"
               ;;
             "preprod")
               VERSION="$PACKAGE_VERSION"
-              VERSION_CODE=$((2000000 + RUN_NUMBER))  # Staging: 2M+
+              VERSION_CODE=$((OFFSET_START + ${{ github.run_number }}))
               ENVIRONMENT="staging"
               IS_PRODUCTION="false"
               ;;
             *)
               VERSION="$PACKAGE_VERSION"
-              VERSION_CODE=$((1000000 + RUN_NUMBER))  # Development: 1M+
+              VERSION_CODE=$((OFFSET_START + ${{ github.run_number }}))
               ENVIRONMENT="development"
               IS_PRODUCTION="false"
               ;;
