@@ -13,7 +13,7 @@ export default function App() {
             alignItems: 'center',
           }}
         >
-          <Text>123555ssหsหsหห</Text>
+          <Text>123555ssหsหsหหsห</Text>
           <Text>123</Text>
         </View>
         <View
