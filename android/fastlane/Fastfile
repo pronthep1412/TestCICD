@@ -59,7 +59,7 @@ platform :android do
     build_and_deploy(
       track: 'production',
       release_status: 'draft',
-      rollout: '0.1'  # 10% rollout for safety
+      # rollout: '0.1'  # 10% rollout for safety
     )
   end
 

@@ -287,7 +287,6 @@ jobs:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
-          APP_STORE_CONNECT_API_KEY_PATH: /tmp/ios-keys/AuthKey.p8
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
           VERSION_NUMBER: ${{ inputs.version }}
@@ -305,7 +304,6 @@ jobs:
           echo "- Version: $VERSION_NUMBER"
           echo "- Build: $BUILD_NUMBER"
           echo "- API Key ID: ${APP_STORE_CONNECT_API_KEY_ID:0:8}..."
-          echo "- API Key file: $([ -f "$APP_STORE_CONNECT_API_KEY_PATH" ] && echo "Ready" || echo "Missing")"
           
           # Determine deployment track
           TRACK="TestFlight Internal"

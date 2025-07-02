@@ -188,13 +188,13 @@ platform :ios do
         UI.message("⚠️ Falling back to traditional auth")
       end
     else
-      UI.message("⚠️ API key not available, using traditional auth")
-      missing_items = []
-      missing_items << "API_KEY_ID" unless api_key_id
-      missing_items << "ISSUER_ID" unless api_issuer_id  
-      missing_items << "KEY_CONTENT" unless api_key_content_base64
-      UI.message("Missing: #{missing_items.join(', ')}")
+      UI.message("⚠️ API key not available for App Store upload, using traditional auth")
     end
+
+     # --- เพิ่มบรรทัดนี้เพื่อความปลอดภัย ---
+    # ล้างค่า api_key_path ที่อาจหลงเหลือมา ป้องกัน conflict ในอนาคต
+    upload_options[:api_key_path] = nil
+    # -------------------------------------
     
     upload_to_testflight(upload_options)
   end
