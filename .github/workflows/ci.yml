@@ -1,8 +1,10 @@
-# ci.yml - Manual Platform Testing Control
+# ci.yml - Manual Platform Testing Control  
 # 🎯 MANUAL PLATFORM TESTING:
-# - ใช้ labels หรือ PR title ควบคุมการ test platform
+# - ใช้ PR labels หรือ PR title keywords ควบคุมการ test platform
 # - Default: ไม่รัน platform builds (ประหยัดเวลาสูงสุด)
-# - Manual control: เพิ่ม labels หรือ [Android]/[iOS] ใน title
+# - Manual control: 
+#   • Labels: 'test-android', 'test-ios' 
+#   • PR title: [Android], [iOS]
 name: Pull Request Testing
 
 on:
@@ -29,10 +31,10 @@ on:
 
 env:
   NODE_VERSION: 22.11.0
-  # 🎛️ PLATFORM CONTROL VARIABLES - MANUAL CONTROL MODE
-  # ปรับค่าเหล่านี้เพื่อควบคุมการ test platforms
-  TEST_ANDROID: 'auto'        # Default: ปิด (เปิดด้วย label/title)
-  TEST_IOS: 'auto'            # Default: ปิด (เปิดด้วย label/title)
+  # 🎛️ MANUAL PLATFORM CONTROL - เปิดเฉพาะเมื่อระบุชัดเจน
+  # Platform builds จะรันเฉพาะเมื่อมีการระบุชัดเจนเท่านั้น
+  TEST_ANDROID: 'false'       # Default: ปิด (เปิดด้วย label/title)
+  TEST_IOS: 'false'           # Default: ปิด (เปิดด้วย label/title)
 
 jobs:
   
@@ -428,28 +430,35 @@ jobs:
 # 📋 USAGE EXAMPLES:
 # 
 # 1. Default (fastest, recommended):
-#    - No labels, no [Platform] in title
-#    - Only tests will run (~1-2 minutes)
-#    - Platform builds skipped to save time
+#    - ไม่ต้องเพิ่ม labels หรือ keywords ใด ๆ
+#    - รันแค่ tests เท่านั้น (~1-2 นาที)
+#    - ไม่ build platform ใด ๆ (ประหยัดเวลาสูงสุด)
 #
 # 2. Android-only testing:
-#    - Add [Android] to PR title
-#    - Or add 'test-android' label
-#    - Or set TEST_ANDROID: 'true'
-#    - Only Android build will run (~3-5 minutes)
+#    - เพิ่ม [Android] หรือ [android] ใน PR title
+#    - หรือเพิ่ม label 'test-android' ให้ PR
+#    - หรือแก้ไข TEST_ANDROID: 'true' ในไฟล์นี้
+#    - จะรัน Android build (~3-5 นาที)
 #
 # 3. iOS-only testing:
-#    - Add [iOS] to PR title
-#    - Or add 'test-ios' label  
-#    - Or set TEST_IOS: 'true'
-#    - Only iOS build will run (~8-10 minutes)
+#    - เพิ่ม [iOS] หรือ [ios] ใน PR title
+#    - หรือเพิ่ม label 'test-ios' ให้ PR  
+#    - หรือแก้ไข TEST_IOS: 'true' ในไฟล์นี้
+#    - จะรัน iOS build (~8-10 นาที)
 #
 # 4. Full testing (both platforms):
-#    - Add both 'test-ios' and 'test-android' labels
-#    - Or add both [Android] and [iOS] to title
-#    - Or set both TEST_ANDROID: 'true', TEST_IOS: 'true'
-#    - Both builds will run (~12-15 minutes)
+#    - เพิ่ม labels ทั้งสอง: 'test-ios' และ 'test-android'
+#    - หรือเพิ่ม [Android] [iOS] ใน title
+#    - หรือแก้ไข TEST_ANDROID: 'true', TEST_IOS: 'true'
+#    - จะรันทั้งสอง builds (~12-15 นาที)
 #
-# 5. Force override via environment:
-#    - Set TEST_ANDROID: 'true', TEST_IOS: 'false'
-#    - Ignores labels and title completely
+# 🏷️ วิธีเพิ่ม Label ใน GitHub:
+# 1. ไปที่ PR ของคุณ
+# 2. คลิก "Labels" ทางด้านขวา
+# 3. เลือก 'test-android' หรือ 'test-ios'
+# 4. หรือสร้าง label ใหม่ถ้าไม่มี
+#
+# 📝 วิธีใช้ PR Title:
+# - ตัวอย่าง: "Fix login bug [Android]"
+# - ตัวอย่าง: "Update iOS UI [iOS]"  
+# - ตัวอย่าง: "Major refactor [Android] [iOS]"
