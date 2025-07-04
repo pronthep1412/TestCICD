@@ -1,10 +1,4 @@
 # ci.yml - Manual Platform Testing Control  
-# 🎯 MANUAL PLATFORM TESTING:
-# - ใช้ PR labels หรือ PR title keywords ควบคุมการ test platform
-# - Default: ไม่รัน platform builds (ประหยัดเวลาสูงสุด)
-# - Manual control: 
-#   • Labels: 'test-android', 'test-ios' 
-#   • PR title: [Android], [iOS]
 name: Pull Request Testing
 
 on:
@@ -31,10 +25,8 @@ on:
 
 env:
   NODE_VERSION: 22.11.0
-  # 🎛️ MANUAL PLATFORM CONTROL - เปิดเฉพาะเมื่อระบุชัดเจน
-  # Platform builds จะรันเฉพาะเมื่อมีการระบุชัดเจนเท่านั้น
-  TEST_ANDROID: 'false'       # Default: ปิด (เปิดด้วย label/title)
-  TEST_IOS: 'false'           # Default: ปิด (เปิดด้วย label/title)
+  TEST_ANDROID: 'false'
+  TEST_IOS: 'false'
 
 jobs:
   
@@ -101,7 +93,7 @@ jobs:
           echo "name=$TARGET_BRANCH" >> $GITHUB_OUTPUT
           echo "Target branch: $TARGET_BRANCH"
 
-      # 🎯 MANUAL PLATFORM DETECTION
+      #ตรวจจับการ build platform ที่ต้องการทดสอบ
       - name: Detect Required Platforms
         id: platforms
         run: |
@@ -316,8 +308,7 @@ jobs:
       ##################################################
       ##################################################
 
-  
-  # 🤖 CONDITIONAL ANDROID BUILD
+
   # รันเฉพาะเมื่อ platform detection กำหนดให้ test Android
   build-android-test:
     needs: test-and-validate
@@ -332,7 +323,7 @@ jobs:
       js_bundle_artifact: js-bundle-android-${{ github.run_number }}
     secrets: inherit
 
-  # � CONDITIONAL iOS BUILD  
+
   # รันเฉพาะเมื่อ platform detection กำหนดให้ test iOS
   build-ios-test:
     needs: test-and-validate
