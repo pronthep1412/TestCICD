@@ -33,8 +33,8 @@ env:
   NODE_VERSION: 22.11.0
   # 🎛️ PLATFORM CONTROL VARIABLES
   # ปรับค่าเหล่านี้เพื่อควบคุมการ test platforms
-  TEST_ANDROID: 'false'        # เปิด/ปิด Android testing
-  TEST_IOS: 'false'           # เปิด/ปิด iOS testing  
+  TEST_ANDROID: 'auto'         # 'true', 'false', หรือ 'auto' (ให้ auto-detect ตัดสินใจ)
+  TEST_IOS: 'auto'             # 'true', 'false', หรือ 'auto' (ให้ auto-detect ตัดสินใจ)  
   AUTO_DETECT_PLATFORM: 'true' # Auto-detect จาก changed files
 
 jobs:
@@ -116,6 +116,15 @@ jobs:
           echo "  TEST_IOS: $TEST_IOS" 
           echo "  AUTO_DETECT: $AUTO_DETECT"
           
+          # Convert 'auto' to 'false' initially, will be determined by auto-detection
+          if [ "$TEST_ANDROID" = "auto" ]; then
+            TEST_ANDROID="false"
+          fi
+          
+          if [ "$TEST_IOS" = "auto" ]; then
+            TEST_IOS="false"
+          fi
+          
           # Auto-detection based on changed files
           if [ "$AUTO_DETECT" = "true" ]; then
             echo "🧠 Running auto-detection based on changed files..."
@@ -125,16 +134,28 @@ jobs:
             CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
             echo "Changed files: $CHANGED_FILES"
             
-            # Check for iOS-specific changes
-            if echo "$CHANGED_FILES" | grep -E "(ios/|\.xcodeproj|\.xcworkspace|Podfile|\.podspec)" > /dev/null; then
+            # Check for iOS-specific changes (exclude workflow changes)
+            if echo "$CHANGED_FILES" | grep -E "(^ios/|\.xcodeproj|\.xcworkspace|Podfile|\.podspec)" > /dev/null; then
               echo "📱 iOS-specific files detected - enabling iOS testing"
               TEST_IOS="true"
             fi
             
-            # Check for Android-specific changes  
-            if echo "$CHANGED_FILES" | grep -E "(android/|\.gradle|gradle)" > /dev/null; then
+            # Check for Android-specific changes (exclude workflow changes)
+            if echo "$CHANGED_FILES" | grep -E "(^android/|\.gradle|gradle\.properties)" > /dev/null; then
               echo "🤖 Android-specific files detected - ensuring Android testing"
               TEST_ANDROID="true"
+            fi
+            
+            # If no platform-specific changes detected, use fallback logic
+            # Only enable Android for regular JS/general changes (if both are false)
+            if [ "$TEST_ANDROID" = "false" ] && [ "$TEST_IOS" = "false" ]; then
+              # Check if there are general code changes (not just workflow/config)
+              if echo "$CHANGED_FILES" | grep -E "(^src/|^components/|^__tests__/|\.js$|\.ts$|\.jsx$|\.tsx$|package\.json)" > /dev/null; then
+                echo "📝 General code changes detected - enabling Android testing as fallback"
+                TEST_ANDROID="true"
+              else
+                echo "ℹ️ Only config/workflow changes detected - no platform testing needed"
+              fi
             fi
             
             # Check PR labels for manual override
@@ -449,25 +470,29 @@ jobs:
           
 # 📋 USAGE EXAMPLES:
 # 
-# 1. Android-only testing:
+# 1. Auto-detection (default, smartest):
+#    - Set TEST_ANDROID: 'auto', TEST_IOS: 'auto'
+#    - Only runs builds when relevant files change
+#    - Skips builds for config-only changes (~1-2 minutes)
+#
+# 2. Android-only testing:
 #    - Add [Android] to PR title
 #    - Or add 'test-android' label
+#    - Or set TEST_ANDROID: 'true', TEST_IOS: 'false'
 #    - Only Android build will run (~3-5 minutes)
 #
-# 2. iOS-only testing:
+# 3. iOS-only testing:
 #    - Add [iOS] to PR title
-#    - Or add 'test-ios' label
+#    - Or add 'test-ios' label  
+#    - Or set TEST_ANDROID: 'false', TEST_IOS: 'true'
 #    - Only iOS build will run (~8-10 minutes)
 #
-# 3. Full testing (both platforms):
-#    - add both 'test-ios' and 'test-android' labels
+# 4. Full testing (both platforms):
+#    - Add both 'test-ios' and 'test-android' labels
+#    - Or set both TEST_ANDROID: 'true', TEST_IOS: 'true'
 #    - Both builds will run (~12-15 minutes)
 #
-# 4. Auto-detection (smart):
-#    - Automatically detects iOS changes in ios/, Podfile, etc.
-#    - Automatically enables iOS testing when needed
-#
-# 5. Manual control via environment variables:
-#    - Set TEST_ANDROID: 'false' to skip Android
-#    - Set TEST_IOS: 'true' to force iOS
-#    - Set AUTO_DETECT_PLATFORM: 'false' to disable auto-detection
+# 5. Skip all builds:
+#    - Set TEST_ANDROID: 'false', TEST_IOS: 'false'
+#    - Set AUTO_DETECT_PLATFORM: 'false'
+#    - Only tests will run (~1-2 minutes)
