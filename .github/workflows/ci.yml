@@ -1,8 +1,8 @@
-# ci.yml - Smart Platform Testing with Dynamic Control
-# 🎯 FLEXIBLE PLATFORM TESTING:
-# - ใช้ตัวแปร environment variables ควบคุมการ test platform
-# - สามารถเลือก Android-only, iOS-only, หรือ Both platforms
-# - ประหยัดเวลาสำหรับ regular PRs แต่ยังคงความยืดหยุ่น
+# ci.yml - Manual Platform Testing Control
+# 🎯 MANUAL PLATFORM TESTING:
+# - ใช้ labels หรือ PR title ควบคุมการ test platform
+# - Default: ไม่รัน platform builds (ประหยัดเวลาสูงสุด)
+# - Manual control: เพิ่ม labels หรือ [Android]/[iOS] ใน title
 name: Pull Request Testing
 
 on:
@@ -16,8 +16,6 @@ on:
       - 'components/**'
       - '__tests__/**'
       - 'test/**'
-      - 'android/**'
-      - 'ios/**'
       - 'package.json'
       - 'package-lock.json'
       - 'yarn.lock'
@@ -31,11 +29,10 @@ on:
 
 env:
   NODE_VERSION: 22.11.0
-  # 🎛️ PLATFORM CONTROL VARIABLES - DEBUGGING MODE
+  # 🎛️ PLATFORM CONTROL VARIABLES - MANUAL CONTROL MODE
   # ปรับค่าเหล่านี้เพื่อควบคุมการ test platforms
-  TEST_ANDROID: 'auto'         # 'true', 'false', หรือ 'auto' (ให้ auto-detect ตัดสินใจ)
-  TEST_IOS: 'false'            # 🚨 FORCE DISABLE iOS FOR DEBUGGING
-  AUTO_DETECT_PLATFORM: 'true' # Auto-detect จาก changed files
+  TEST_ANDROID: 'false'        # Default: ปิด (เปิดด้วย label/title)
+  TEST_IOS: 'false'            # Default: ปิด (เปิดด้วย label/title)
 
 jobs:
   
@@ -102,85 +99,40 @@ jobs:
           echo "name=$TARGET_BRANCH" >> $GITHUB_OUTPUT
           echo "Target branch: $TARGET_BRANCH"
 
-      # 🎯 SMART PLATFORM DETECTION
+      # 🎯 MANUAL PLATFORM DETECTION
       - name: Detect Required Platforms
         id: platforms
         run: |
-          # เริ่มต้นด้วยค่าจาก environment variables
+          # เริ่มต้นด้วยค่า default
           TEST_ANDROID="${{ env.TEST_ANDROID }}"
           TEST_IOS="${{ env.TEST_IOS }}"
-          AUTO_DETECT="${{ env.AUTO_DETECT_PLATFORM }}"
           
           echo "🔍 Initial platform settings:"
           echo "  TEST_ANDROID: $TEST_ANDROID"
-          echo "  TEST_IOS: $TEST_IOS" 
-          echo "  AUTO_DETECT: $AUTO_DETECT"
+          echo "  TEST_IOS: $TEST_IOS"
           
-          # Convert 'auto' to 'false' initially, will be determined by auto-detection
-          if [ "$TEST_ANDROID" = "auto" ]; then
-            TEST_ANDROID="false"
+          # 🎯 Manual Control Only - ตรวจสอบจาก labels และ PR title
+          
+          # Check PR labels
+          if echo "${{ github.event.pull_request.labels.*.name }}" | grep -i "test-android" > /dev/null; then
+            echo "🏷️ 'test-android' label detected - enabling Android testing"
+            TEST_ANDROID="true"
           fi
           
-          if [ "$TEST_IOS" = "auto" ]; then
-            TEST_IOS="false"
+          if echo "${{ github.event.pull_request.labels.*.name }}" | grep -i "test-ios" > /dev/null; then
+            echo "🏷️ 'test-ios' label detected - enabling iOS testing"
+            TEST_IOS="true"
           fi
           
-          # Auto-detection based on changed files
-          if [ "$AUTO_DETECT" = "true" ]; then
-            echo "🧠 Running auto-detection based on changed files..."
-            
-            # Get changed files
-            git fetch origin ${{ github.base_ref }} --depth=1
-            CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
-            echo "Changed files: $CHANGED_FILES"
-            
-            # Check for iOS-specific changes (exclude workflow changes)
-            if echo "$CHANGED_FILES" | grep -E "(^ios/|\.xcodeproj|\.xcworkspace|Podfile|\.podspec)" > /dev/null; then
-              echo "📱 iOS-specific files detected - enabling iOS testing"
-              TEST_IOS="true"
-            fi
-            
-            # Check for Android-specific changes (exclude workflow changes)
-            if echo "$CHANGED_FILES" | grep -E "(^android/|\.gradle|gradle\.properties)" > /dev/null; then
-              echo "🤖 Android-specific files detected - ensuring Android testing"
-              TEST_ANDROID="true"
-            fi
-            
-            # If no platform-specific changes detected, use fallback logic
-            # Only enable Android for regular JS/general changes (if both are false)
-            if [ "$TEST_ANDROID" = "false" ] && [ "$TEST_IOS" = "false" ]; then
-              # Check if there are general code changes (not just workflow/config)
-              if echo "$CHANGED_FILES" | grep -E "(^src/|^components/|^__tests__/|App\.js|App\.tsx|index\.js|index\.ts|\.js$|\.ts$|\.jsx$|\.tsx$|package\.json)" > /dev/null; then
-                echo "📝 General code changes detected - enabling Android testing as fallback"
-                TEST_ANDROID="true"
-                # ⚠️ DO NOT enable iOS automatically for general changes
-                echo "ℹ️ iOS testing not enabled for general changes (add [iOS] to title or label to force)"
-              else
-                echo "ℹ️ Only config/workflow changes detected - no platform testing needed"
-              fi
-            fi
-            
-            # Check PR labels for manual override
-            if echo "${{ github.event.pull_request.labels.*.name }}" | grep -i "test-ios" > /dev/null; then
-              echo "🏷️ 'test-ios' label detected - forcing iOS testing"
-              TEST_IOS="true"
-            fi
-            
-            if echo "${{ github.event.pull_request.labels.*.name }}" | grep -i "test-android" > /dev/null; then
-              echo "🏷️ 'test-android' label detected - forcing Android testing"  
-              TEST_ANDROID="true"
-            fi
-            
-            # Check PR title for platform hints
-            if echo "${{ github.event.pull_request.title }}" | grep -E "\[iOS\]|\[ios\]" > /dev/null; then
-              echo "📝 '[iOS]' in PR title - enabling iOS testing"
-              TEST_IOS="true"
-            fi
-            
-            if echo "${{ github.event.pull_request.title }}" | grep -E "\[Android\]|\[android\]" > /dev/null; then
-              echo "📝 '[Android]' in PR title - enabling Android testing"
-              TEST_ANDROID="true"
-            fi
+          # Check PR title
+          if echo "${{ github.event.pull_request.title }}" | grep -E "\[Android\]|\[android\]" > /dev/null; then
+            echo "📝 '[Android]' in PR title - enabling Android testing"
+            TEST_ANDROID="true"
+          fi
+          
+          if echo "${{ github.event.pull_request.title }}" | grep -E "\[iOS\]|\[ios\]" > /dev/null; then
+            echo "📝 '[iOS]' in PR title - enabling iOS testing"
+            TEST_IOS="true"
           fi
           
           # Output final decisions
@@ -191,11 +143,11 @@ jobs:
           echo "🎯 Final platform testing decisions:"
           echo "  Android: $TEST_ANDROID"
           echo "  iOS: $TEST_IOS"
-          echo "  Changed files: $CHANGED_FILES"
           echo "  PR title: ${{ github.event.pull_request.title }}"
           echo "  PR labels: ${{ github.event.pull_request.labels.*.name }}"
+          echo "  Mode: Manual Control Only"
           
-          # Determine bundle creation needs
+          # Determine bundle creation
           CREATE_ANDROID_BUNDLE="false"
           CREATE_IOS_BUNDLE="false"
           
@@ -471,33 +423,33 @@ jobs:
           echo "- Use \`[iOS]\` in PR title to force iOS testing" >> $GITHUB_STEP_SUMMARY
           echo "- Use \`[Android]\` in PR title to force Android testing" >> $GITHUB_STEP_SUMMARY  
           echo "- Add labels: \`test-ios\` or \`test-android\` for manual control" >> $GITHUB_STEP_SUMMARY
-          echo "- Auto-detection based on changed files is enabled" >> $GITHUB_STEP_SUMMARY
+          echo "- Manual control only - no auto-detection" >> $GITHUB_STEP_SUMMARY
           
 # 📋 USAGE EXAMPLES:
 # 
-# 1. Auto-detection (default, smartest):
-#    - Set TEST_ANDROID: 'auto', TEST_IOS: 'auto'
-#    - Only runs builds when relevant files change
-#    - Skips builds for config-only changes (~1-2 minutes)
+# 1. Default (fastest, recommended):
+#    - No labels, no [Platform] in title
+#    - Only tests will run (~1-2 minutes)
+#    - Platform builds skipped to save time
 #
 # 2. Android-only testing:
 #    - Add [Android] to PR title
 #    - Or add 'test-android' label
-#    - Or set TEST_ANDROID: 'true', TEST_IOS: 'false'
+#    - Or set TEST_ANDROID: 'true'
 #    - Only Android build will run (~3-5 minutes)
 #
 # 3. iOS-only testing:
 #    - Add [iOS] to PR title
 #    - Or add 'test-ios' label  
-#    - Or set TEST_ANDROID: 'false', TEST_IOS: 'true'
+#    - Or set TEST_IOS: 'true'
 #    - Only iOS build will run (~8-10 minutes)
 #
 # 4. Full testing (both platforms):
 #    - Add both 'test-ios' and 'test-android' labels
+#    - Or add both [Android] and [iOS] to title
 #    - Or set both TEST_ANDROID: 'true', TEST_IOS: 'true'
 #    - Both builds will run (~12-15 minutes)
 #
-# 5. Skip all builds:
-#    - Set TEST_ANDROID: 'false', TEST_IOS: 'false'
-#    - Set AUTO_DETECT_PLATFORM: 'false'
-#    - Only tests will run (~1-2 minutes)
+# 5. Force override via environment:
+#    - Set TEST_ANDROID: 'true', TEST_IOS: 'false'
+#    - Ignores labels and title completely
