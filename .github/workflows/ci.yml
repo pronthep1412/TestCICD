@@ -31,10 +31,10 @@ on:
 
 env:
   NODE_VERSION: 22.11.0
-  # 🎛️ PLATFORM CONTROL VARIABLES
+  # 🎛️ PLATFORM CONTROL VARIABLES - DEBUGGING MODE
   # ปรับค่าเหล่านี้เพื่อควบคุมการ test platforms
   TEST_ANDROID: 'auto'         # 'true', 'false', หรือ 'auto' (ให้ auto-detect ตัดสินใจ)
-  TEST_IOS: 'auto'             # 'true', 'false', หรือ 'auto' (ให้ auto-detect ตัดสินใจ)  
+  TEST_IOS: 'false'            # 🚨 FORCE DISABLE iOS FOR DEBUGGING
   AUTO_DETECT_PLATFORM: 'true' # Auto-detect จาก changed files
 
 jobs:
@@ -150,9 +150,11 @@ jobs:
             # Only enable Android for regular JS/general changes (if both are false)
             if [ "$TEST_ANDROID" = "false" ] && [ "$TEST_IOS" = "false" ]; then
               # Check if there are general code changes (not just workflow/config)
-              if echo "$CHANGED_FILES" | grep -E "(^src/|^components/|^__tests__/|\.js$|\.ts$|\.jsx$|\.tsx$|package\.json)" > /dev/null; then
+              if echo "$CHANGED_FILES" | grep -E "(^src/|^components/|^__tests__/|App\.js|App\.tsx|index\.js|index\.ts|\.js$|\.ts$|\.jsx$|\.tsx$|package\.json)" > /dev/null; then
                 echo "📝 General code changes detected - enabling Android testing as fallback"
                 TEST_ANDROID="true"
+                # ⚠️ DO NOT enable iOS automatically for general changes
+                echo "ℹ️ iOS testing not enabled for general changes (add [iOS] to title or label to force)"
               else
                 echo "ℹ️ Only config/workflow changes detected - no platform testing needed"
               fi
@@ -189,6 +191,9 @@ jobs:
           echo "🎯 Final platform testing decisions:"
           echo "  Android: $TEST_ANDROID"
           echo "  iOS: $TEST_IOS"
+          echo "  Changed files: $CHANGED_FILES"
+          echo "  PR title: ${{ github.event.pull_request.title }}"
+          echo "  PR labels: ${{ github.event.pull_request.labels.*.name }}"
           
           # Determine bundle creation needs
           CREATE_ANDROID_BUNDLE="false"
