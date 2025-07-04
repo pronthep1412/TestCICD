@@ -42,7 +42,7 @@ platform :ios do
     )
   end
 
-    #สำหรับ Deployment TestFlight Beta
+  #สำหรับ Deployment TestFlight Beta
   lane :deploy_preprod do
     UI.message("🚀 Deploying to TestFlight Beta...")
     build_and_deploy(
