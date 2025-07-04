@@ -1,11 +1,15 @@
-# ci.yml - Super Simple Version (เดิม + เพิ่ม bundle sharing)
+# ci.yml - Smart Platform Testing with Dynamic Control
+# 🎯 FLEXIBLE PLATFORM TESTING:
+# - ใช้ตัวแปร environment variables ควบคุมการ test platform
+# - สามารถเลือก Android-only, iOS-only, หรือ Both platforms
+# - ประหยัดเวลาสำหรับ regular PRs แต่ยังคงความยืดหยุ่น
 name: Pull Request Testing
 
 on:
   pull_request:
     branches:
-      # - master
-      - develop
+      - master
+      - develop  
       - preprod
     paths:
       - 'src/**'
@@ -27,6 +31,11 @@ on:
 
 env:
   NODE_VERSION: 22.11.0
+  # 🎛️ PLATFORM CONTROL VARIABLES
+  # ปรับค่าเหล่านี้เพื่อควบคุมการ test platforms
+  TEST_ANDROID: 'false'        # เปิด/ปิด Android testing
+  TEST_IOS: 'false'           # เปิด/ปิด iOS testing  
+  AUTO_DETECT_PLATFORM: 'true' # Auto-detect จาก changed files
 
 jobs:
   
@@ -37,6 +46,8 @@ jobs:
       pr_version_code: ${{ steps.version.outputs.version_code }}
       target_branch: ${{ steps.branch.outputs.name }}
       coverage: ${{ steps.coverage.outputs.percentage }}
+      test_android: ${{ steps.platforms.outputs.test_android }}
+      test_ios: ${{ steps.platforms.outputs.test_ios }}
       
     steps:
       #ดึงโค้ดใน git มาประมวลผล 
@@ -45,17 +56,29 @@ jobs:
         with:
           fetch-depth: 2
 
-      #ติดตั้ง node
+      #ติดตั้ง node + cache optimization
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: yarn
 
-      #ติดตั้ง module install
+      # เพิ่ม cache สำหรับ dependencies เพื่อลดเวลา install
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            ~/.cache/yarn
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+
+      #ติดตั้ง module install (เร็วขึ้นด้วย cache)
       - name: Install Dependencies
         run: |
-          yarn install --frozen-lockfile
+          # ใช้ --prefer-offline เพื่อใช้ cache ก่อน
+          yarn install --frozen-lockfile --prefer-offline
           echo "✅ Dependencies installed: $(du -sh node_modules | cut -f1)"
 
       #สร้าง version number อัพ store
@@ -78,6 +101,88 @@ jobs:
           TARGET_BRANCH=${{ github.base_ref }}
           echo "name=$TARGET_BRANCH" >> $GITHUB_OUTPUT
           echo "Target branch: $TARGET_BRANCH"
+
+      # 🎯 SMART PLATFORM DETECTION
+      - name: Detect Required Platforms
+        id: platforms
+        run: |
+          # เริ่มต้นด้วยค่าจาก environment variables
+          TEST_ANDROID="${{ env.TEST_ANDROID }}"
+          TEST_IOS="${{ env.TEST_IOS }}"
+          AUTO_DETECT="${{ env.AUTO_DETECT_PLATFORM }}"
+          
+          echo "🔍 Initial platform settings:"
+          echo "  TEST_ANDROID: $TEST_ANDROID"
+          echo "  TEST_IOS: $TEST_IOS" 
+          echo "  AUTO_DETECT: $AUTO_DETECT"
+          
+          # Auto-detection based on changed files
+          if [ "$AUTO_DETECT" = "true" ]; then
+            echo "🧠 Running auto-detection based on changed files..."
+            
+            # Get changed files
+            git fetch origin ${{ github.base_ref }} --depth=1
+            CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+            echo "Changed files: $CHANGED_FILES"
+            
+            # Check for iOS-specific changes
+            if echo "$CHANGED_FILES" | grep -E "(ios/|\.xcodeproj|\.xcworkspace|Podfile|\.podspec)" > /dev/null; then
+              echo "📱 iOS-specific files detected - enabling iOS testing"
+              TEST_IOS="true"
+            fi
+            
+            # Check for Android-specific changes  
+            if echo "$CHANGED_FILES" | grep -E "(android/|\.gradle|gradle)" > /dev/null; then
+              echo "🤖 Android-specific files detected - ensuring Android testing"
+              TEST_ANDROID="true"
+            fi
+            
+            # Check PR labels for manual override
+            if echo "${{ github.event.pull_request.labels.*.name }}" | grep -i "test-ios" > /dev/null; then
+              echo "🏷️ 'test-ios' label detected - forcing iOS testing"
+              TEST_IOS="true"
+            fi
+            
+            if echo "${{ github.event.pull_request.labels.*.name }}" | grep -i "test-android" > /dev/null; then
+              echo "🏷️ 'test-android' label detected - forcing Android testing"  
+              TEST_ANDROID="true"
+            fi
+            
+            # Check PR title for platform hints
+            if echo "${{ github.event.pull_request.title }}" | grep -E "\[iOS\]|\[ios\]" > /dev/null; then
+              echo "📝 '[iOS]' in PR title - enabling iOS testing"
+              TEST_IOS="true"
+            fi
+            
+            if echo "${{ github.event.pull_request.title }}" | grep -E "\[Android\]|\[android\]" > /dev/null; then
+              echo "📝 '[Android]' in PR title - enabling Android testing"
+              TEST_ANDROID="true"
+            fi
+          fi
+          
+          # Output final decisions
+          echo "test_android=$TEST_ANDROID" >> $GITHUB_OUTPUT
+          echo "test_ios=$TEST_IOS" >> $GITHUB_OUTPUT
+          
+          echo ""
+          echo "🎯 Final platform testing decisions:"
+          echo "  Android: $TEST_ANDROID"
+          echo "  iOS: $TEST_IOS"
+          
+          # Determine bundle creation needs
+          CREATE_ANDROID_BUNDLE="false"
+          CREATE_IOS_BUNDLE="false"
+          
+          if [ "$TEST_ANDROID" = "true" ]; then
+            CREATE_ANDROID_BUNDLE="true"
+          fi
+          
+          if [ "$TEST_IOS" = "true" ]; then
+            CREATE_IOS_BUNDLE="true"
+          fi
+          
+          echo "create_android_bundle=$CREATE_ANDROID_BUNDLE" >> $GITHUB_OUTPUT
+          echo "create_ios_bundle=$CREATE_IOS_BUNDLE" >> $GITHUB_OUTPUT
 
       ##################################################
       #เซตนี้เป็น Quality Gates เพื่อตรวจสอบคุณภาพโค้ดก่อน merge
@@ -167,34 +272,54 @@ jobs:
       ##################################################
 
       ##################################################
-      #เอาไว้สร้าง JavaScript bundles ล่วงหน้า แล้วแชร์ให้ Android/iOS build jobs ใช้ร่วมกัน
+      #เอาไว้สร้าง JavaScript bundles ตามความต้องการ (Dynamic Bundle Creation)
       - name: Create JS Bundles for Sharing
         run: |
-          echo "📦 Creating JavaScript bundles..."
+          echo "📦 Creating JavaScript bundles based on platform requirements..."
           
-          # Android bundle
-          mkdir -p bundles/android
-          npx react-native bundle \
-            --platform android \
-            --dev false \
-            --entry-file index.js \
-            --bundle-output bundles/android/index.android.bundle \
-            --assets-dest bundles/android/assets/ \
-            --minify true
+          ANDROID_NEEDED="${{ steps.platforms.outputs.create_android_bundle }}"
+          IOS_NEEDED="${{ steps.platforms.outputs.create_ios_bundle }}"
           
-          # iOS bundle  
-          mkdir -p bundles/ios
-          npx react-native bundle \
-            --platform ios \
-            --dev false \
-            --entry-file index.js \
-            --bundle-output bundles/ios/main.jsbundle \
-            --assets-dest bundles/ios/assets/ \
-            --minify true
+          echo "Bundle creation plan:"
+          echo "  Android bundle: $ANDROID_NEEDED"
+          echo "  iOS bundle: $IOS_NEEDED"
           
-          echo "✅ Bundles created successfully"
+          # Create Android bundle if needed
+          if [ "$ANDROID_NEEDED" = "true" ]; then
+            echo "🤖 Creating Android bundle..."
+            mkdir -p bundles/android
+            npx react-native bundle \
+              --platform android \
+              --dev false \
+              --entry-file index.js \
+              --bundle-output bundles/android/index.android.bundle \
+              --assets-dest bundles/android/assets/ \
+              --minify true
+            echo "✅ Android bundle created"
+          else
+            echo "⏭️ Skipping Android bundle creation"
+          fi
+          
+          # Create iOS bundle if needed  
+          if [ "$IOS_NEEDED" = "true" ]; then
+            echo "📱 Creating iOS bundle..."
+            mkdir -p bundles/ios
+            npx react-native bundle \
+              --platform ios \
+              --dev false \
+              --entry-file index.js \
+              --bundle-output bundles/ios/main.jsbundle \
+              --assets-dest bundles/ios/assets/ \
+              --minify true
+            echo "✅ iOS bundle created"
+          else
+            echo "⏭️ Skipping iOS bundle creation"
+          fi
+          
+          echo "🎯 Bundle creation completed based on platform requirements"
 
       - name: Upload Android Bundle
+        if: steps.platforms.outputs.create_android_bundle == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: js-bundle-android-${{ github.run_number }}
@@ -202,6 +327,7 @@ jobs:
           retention-days: 1
 
       - name: Upload iOS Bundle
+        if: steps.platforms.outputs.create_ios_bundle == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: js-bundle-ios-${{ github.run_number }}
@@ -211,9 +337,11 @@ jobs:
       ##################################################
 
   
-  # Build testing for Android - with bundle sharing
+  # 🤖 CONDITIONAL ANDROID BUILD
+  # รันเฉพาะเมื่อ platform detection กำหนดให้ test Android
   build-android-test:
     needs: test-and-validate
+    if: needs.test-and-validate.outputs.test_android == 'true'
     uses: ./.github/workflows/android-build.yml
     with:
       environment: debug
@@ -224,9 +352,11 @@ jobs:
       js_bundle_artifact: js-bundle-android-${{ github.run_number }}
     secrets: inherit
 
-  # Build testing for iOS - with bundle sharing
+  # � CONDITIONAL iOS BUILD  
+  # รันเฉพาะเมื่อ platform detection กำหนดให้ test iOS
   build-ios-test:
-    needs: test-and-validate  
+    needs: test-and-validate
+    if: needs.test-and-validate.outputs.test_ios == 'true'
     uses: ./.github/workflows/ios-build.yml
     with:
       environment: debug
@@ -237,7 +367,7 @@ jobs:
       js_bundle_artifact: js-bundle-ios-${{ github.run_number }}
     secrets: inherit
 
-  #สรุปการ build test
+  #สรุปการ build test - Smart summary based on tested platforms
   pr-summary:
     needs: [test-and-validate, build-android-test, build-ios-test]
     if: always()
@@ -249,11 +379,95 @@ jobs:
           echo "## 🚀 Pull Request Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **PR Version:** ${{ needs.test-and-validate.outputs.pr_version }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Coverage:** ${{ needs.test-and-validate.outputs.coverage }}%" >> $GITHUB_STEP_SUMMARY
+          
+          # Platform testing summary
+          ANDROID_TESTED="${{ needs.test-and-validate.outputs.test_android }}"
+          IOS_TESTED="${{ needs.test-and-validate.outputs.test_ios }}"
+          
+          echo "- **Platform Testing:**" >> $GITHUB_STEP_SUMMARY
+          if [ "$ANDROID_TESTED" = "true" ] && [ "$IOS_TESTED" = "true" ]; then
+            echo "  - 🎯 Full testing: Both Android & iOS" >> $GITHUB_STEP_SUMMARY
+          elif [ "$ANDROID_TESTED" = "true" ] && [ "$IOS_TESTED" = "false" ]; then
+            echo "  - 🤖 Android only (iOS will test in CD)" >> $GITHUB_STEP_SUMMARY
+          elif [ "$ANDROID_TESTED" = "false" ] && [ "$IOS_TESTED" = "true" ]; then
+            echo "  - 📱 iOS only (Android will test in CD)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "  - ⚠️ No platform builds (check configuration)" >> $GITHUB_STEP_SUMMARY
+          fi
+          
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Simple status check
-          if [ "${{ needs.test-and-validate.result }}" = "success" ]; then
-            echo "### ✅ Ready: Tests passed, builds completed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "### ❌ Issues: Please fix failing checks" >> $GITHUB_STEP_SUMMARY
+          # Status check with platform-aware logic
+          TESTS_PASSED="${{ needs.test-and-validate.result }}"
+          ANDROID_RESULT="${{ needs.build-android-test.result }}"
+          IOS_RESULT="${{ needs.build-ios-test.result }}"
+          
+          OVERALL_SUCCESS="true"
+          ISSUES=()
+          
+          # Check test results
+          if [ "$TESTS_PASSED" != "success" ]; then
+            OVERALL_SUCCESS="false"
+            ISSUES+=("Fix test failures")
           fi
+          
+          # Check Android build if it was supposed to run
+          if [ "$ANDROID_TESTED" = "true" ] && [ "$ANDROID_RESULT" != "success" ] && [ "$ANDROID_RESULT" != "skipped" ]; then
+            OVERALL_SUCCESS="false" 
+            ISSUES+=("Fix Android build issues")
+          fi
+          
+          # Check iOS build if it was supposed to run
+          if [ "$IOS_TESTED" = "true" ] && [ "$IOS_RESULT" != "success" ] && [ "$IOS_RESULT" != "skipped" ]; then
+            OVERALL_SUCCESS="false"
+            ISSUES+=("Fix iOS build issues")
+          fi
+          
+          # Generate final summary
+          if [ "$OVERALL_SUCCESS" = "true" ]; then
+            echo "### ✅ Ready for Merge" >> $GITHUB_STEP_SUMMARY
+            echo "- All required tests and builds completed successfully" >> $GITHUB_STEP_SUMMARY
+            
+            # Show what will happen after merge
+            if [ "$ANDROID_TESTED" = "false" ] || [ "$IOS_TESTED" = "false" ]; then
+              echo "- Untested platforms will build automatically in CD pipeline" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "### ❌ Issues Found" >> $GITHUB_STEP_SUMMARY
+            for issue in "${ISSUES[@]}"; do
+              echo "- $issue" >> $GITHUB_STEP_SUMMARY
+            done
+          fi
+          
+          # Platform control hints
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 💡 Platform Control Tips" >> $GITHUB_STEP_SUMMARY
+          echo "- Use \`[iOS]\` in PR title to force iOS testing" >> $GITHUB_STEP_SUMMARY
+          echo "- Use \`[Android]\` in PR title to force Android testing" >> $GITHUB_STEP_SUMMARY  
+          echo "- Add labels: \`test-ios\` or \`test-android\` for manual control" >> $GITHUB_STEP_SUMMARY
+          echo "- Auto-detection based on changed files is enabled" >> $GITHUB_STEP_SUMMARY
+          
+# 📋 USAGE EXAMPLES:
+# 
+# 1. Android-only testing:
+#    - Add [Android] to PR title
+#    - Or add 'test-android' label
+#    - Only Android build will run (~3-5 minutes)
+#
+# 2. iOS-only testing:
+#    - Add [iOS] to PR title
+#    - Or add 'test-ios' label
+#    - Only iOS build will run (~8-10 minutes)
+#
+# 3. Full testing (both platforms):
+#    - add both 'test-ios' and 'test-android' labels
+#    - Both builds will run (~12-15 minutes)
+#
+# 4. Auto-detection (smart):
+#    - Automatically detects iOS changes in ios/, Podfile, etc.
+#    - Automatically enables iOS testing when needed
+#
+# 5. Manual control via environment variables:
+#    - Set TEST_ANDROID: 'false' to skip Android
+#    - Set TEST_IOS: 'true' to force iOS
+#    - Set AUTO_DETECT_PLATFORM: 'false' to disable auto-detection
