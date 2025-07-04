@@ -31,8 +31,8 @@ env:
   NODE_VERSION: 22.11.0
   # 🎛️ PLATFORM CONTROL VARIABLES - MANUAL CONTROL MODE
   # ปรับค่าเหล่านี้เพื่อควบคุมการ test platforms
-  TEST_ANDROID: 'false'        # Default: ปิด (เปิดด้วย label/title)
-  TEST_IOS: 'false'            # Default: ปิด (เปิดด้วย label/title)
+  TEST_ANDROID: 'auto'        # Default: ปิด (เปิดด้วย label/title)
+  TEST_IOS: 'auto'            # Default: ปิด (เปิดด้วย label/title)
 
 jobs:
   
