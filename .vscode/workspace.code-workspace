@@ -1,0 +1,42 @@
+{
+  "folders": [
+    {
+      "name": "TestCICD_React_native",
+      "path": "/Users/mm/Desktop/TestCICD_React_native"
+    },
+    {
+      "name": "TestCICD_Flutter",
+      "path": "/Users/mm/Desktop/TestCICD_Flutter"
+    }
+  ],
+  "settings": {
+    "files.associations": {
+      "Fastfile": "ruby",
+      "Gemfile": "ruby",
+      "*.yaml": "yaml",
+      "*.yml": "yaml"
+    },
+    "ruby.rubocop.onSave": false,
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2,
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/vendor/bundle": true,
+      "**/ios/build": true,
+      "**/android/build": true,
+      "**/build": true,
+      "**/.dart_tool": true,
+      "**/ios/Pods": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "rebornix.ruby",
+      "dart-code.flutter",
+      "dart-code.dart-code",
+      "ms-vscode.vscode-typescript-next",
+      "bradlc.vscode-tailwindcss",
+      "formulahendry.auto-rename-tag"
+    ]
+  }
+}

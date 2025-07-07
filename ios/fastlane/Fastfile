@@ -34,7 +34,7 @@ platform :ios do
   end
 
   #สำหรับ Deployment TestFlight Internal
-  lane :deploy_develop do
+  lane :deploy_develop do 
     UI.message("🚀 Deploying to TestFlight Internal...")
     build_and_deploy(
       groups: ["Internal Testers", "Developers"],
@@ -42,7 +42,7 @@ platform :ios do
     )
   end
 
-    #สำหรับ Deployment TestFlight Beta
+  #สำหรับ Deployment TestFlight Beta
   lane :deploy_preprod do
     UI.message("🚀 Deploying to TestFlight Beta...")
     build_and_deploy(
@@ -67,33 +67,10 @@ platform :ios do
     }
     
     # ✅ ใช้ API key object แทน path
-    api_key_id = ENV['APP_STORE_CONNECT_API_KEY_ID']
-    api_issuer_id = ENV['APP_STORE_CONNECT_API_ISSUER_ID']
-    api_key_content_base64 = ENV['APP_STORE_CONNECT_API_KEY_CONTENT']
-    
-    if api_key_id && api_issuer_id && api_key_content_base64
-      begin
-        require 'base64'
-        api_key_content = Base64.decode64(api_key_content_base64)
-        
-        UI.message("✅ Creating App Store Connect API configuration for App Store")
-        UI.message("   Key ID: #{api_key_id}")
-        UI.message("   Issuer ID: #{api_issuer_id}")
-        
-        app_store_connect_api_key = {
-          key_id: api_key_id,
-          issuer_id: api_issuer_id,
-          key: api_key_content,
-          duration: 1200,
-          in_house: false
-        }
-        
-        upload_options[:api_key] = app_store_connect_api_key
-        UI.success("✅ Using API key for App Store upload")
-      rescue => e
-        UI.error("❌ API key setup failed: #{e.message}")
-        UI.message("⚠️ Falling back to traditional auth")
-      end
+    api_key_object = create_api_key_object
+    if api_key_object
+      upload_options[:api_key] = api_key_object
+      UI.success("✅ Using API key for App Store upload")
     else
       UI.message("⚠️ API key not available for App Store upload, using traditional auth")
     end
@@ -113,12 +90,21 @@ platform :ios do
   private_lane :setup_certificates do
     UI.message("🔐 Setting up certificates...")
     
-    # ใช้แค่ Match กับ traditional auth
-    match(
+    match_options = {
       type: "appstore",
       readonly: true
-    )
+    }
     
+    # เพิ่ม API key ถ้ามี
+    api_key_object = create_api_key_object
+    if api_key_object
+      match_options[:api_key] = api_key_object
+      UI.success("✅ Using App Store Connect API for Match authentication")
+    else
+      UI.message("⚠️ Using traditional auth for Match (requires FASTLANE_PASSWORD)")
+    end
+    
+    match(match_options)
     UI.success("✅ Certificates setup completed")
   end
 
@@ -154,18 +140,35 @@ platform :ios do
       changelog: "Automated build from #{ENV['GITHUB_REF_NAME']} branch"
     }
     
-    # ✅ ใช้ API key content โดยตรง แทน path
+    # ✅ ใช้ API key object แทน path
+    api_key_object = create_api_key_object
+    if api_key_object
+      upload_options[:api_key] = api_key_object
+      UI.success("✅ Using App Store Connect API for TestFlight upload")
+    else
+      UI.message("⚠️ API key not available for TestFlight upload, using traditional auth")
+    end
+
+     # --- เพิ่มบรรทัดนี้เพื่อความปลอดภัย ---
+    # ล้างค่า api_key_path ที่อาจหลงเหลือมา ป้องกัน conflict ในอนาคต
+    upload_options[:api_key_path] = nil
+    # -------------------------------------
+    
+    upload_to_testflight(upload_options)
+  end
+
+  #สร้าง App Store Connect API key object
+  private_lane :create_api_key_object do
     api_key_id = ENV['APP_STORE_CONNECT_API_KEY_ID']
     api_issuer_id = ENV['APP_STORE_CONNECT_API_ISSUER_ID']
     api_key_content_base64 = ENV['APP_STORE_CONNECT_API_KEY_CONTENT']
     
     if api_key_id && api_issuer_id && api_key_content_base64
       begin
-        # Decode API key content
         require 'base64'
         api_key_content = Base64.decode64(api_key_content_base64)
         
-        UI.message("✅ Creating App Store Connect API configuration for TestFlight")
+        UI.message("✅ Creating App Store Connect API configuration")
         UI.message("   Key ID: #{api_key_id}")
         UI.message("   Issuer ID: #{api_issuer_id}")
         UI.message("   Content length: #{api_key_content.length} characters")
@@ -179,13 +182,14 @@ platform :ios do
           in_house: false
         }
         
-        upload_options[:api_key] = app_store_connect_api_key
-        UI.success("✅ Using App Store Connect API for TestFlight upload")
+        UI.success("✅ App Store Connect API key object created")
+        app_store_connect_api_key
         
       rescue => e
-        UI.error("❌ Failed to setup API key: #{e.message}")
+        UI.error("❌ Failed to create API key object: #{e.message}")
         UI.error("   Error class: #{e.class}")
-        UI.message("⚠️ Falling back to traditional auth")
+        UI.message("⚠️ Will use traditional auth")
+        nil
       end
     else
       UI.message("⚠️ API key not available, using traditional auth")
@@ -194,15 +198,25 @@ platform :ios do
       missing_items << "ISSUER_ID" unless api_issuer_id  
       missing_items << "KEY_CONTENT" unless api_key_content_base64
       UI.message("Missing: #{missing_items.join(', ')}")
+      nil
     end
-    
-    upload_to_testflight(upload_options)
   end
 
   #Error handling
   error do |lane, exception|
     error_message = "❌ iOS deployment failed in lane '#{lane}': #{exception.message}"
     UI.error(error_message)
+    
+    # Clean up build artifacts on error
+    if File.exist?("build")
+      UI.message("🧹 Cleaning up build artifacts...")
+      sh("rm -rf build")
+    end
+    
+    if ENV['CI']
+      UI.message("📋 Fastlane logs available in artifacts")
+    end
+    
     raise exception
   end
 end

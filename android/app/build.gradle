@@ -82,7 +82,7 @@ android {
         applicationId "test.cicd.appibc"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
+        versionCode 1000100
         versionName "0.0.50"
     }
     signingConfigs {
