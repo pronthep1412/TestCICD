@@ -12,7 +12,6 @@ env:
   NODE_VERSION: 22.11.0
 
 jobs:
-  
   setup-test-and-prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -21,9 +20,9 @@ jobs:
       branch: ${{ steps.branch.outputs.name }}
       is_production: ${{ steps.branch.outputs.is_production }}
       coverage: ${{ steps.coverage.outputs.percentage }}
-    
+
     steps:
-      #ดึงโค้ดใน git มาประมวลผล 
+      #ดึงโค้ดใน git มาประมวลผล
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -31,7 +30,7 @@ jobs:
 
       #ติดตั้ง node
       - name: Use Node.js
-        uses: actions/setup-node@v4 
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: yarn
@@ -49,7 +48,7 @@ jobs:
           BRANCH_NAME=${{ github.ref_name }}
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           RUN_NUMBER=${{ github.run_number }}
-          OFFSET_START=1000100 
+          OFFSET_START=1000200 
           # 🎯 UNIFIED VERSION STRATEGY: Same version code for both iOS & Android
           case "$BRANCH_NAME" in
             "master")
@@ -71,13 +70,13 @@ jobs:
               IS_PRODUCTION="false"
               ;;
           esac
-          
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
           echo "is_production=$IS_PRODUCTION" >> $GITHUB_OUTPUT
-          
+
           echo "📋 Unified Version Strategy:"
           echo "- App Version: $VERSION"
           echo "- Version Code: $VERSION_CODE (same for iOS & Android)"
@@ -122,7 +121,7 @@ jobs:
         id: coverage
         run: |
           COVERAGE="0"
-          
+
           if [ -f "coverage/coverage-summary.json" ]; then
             COVERAGE=$(node -p "
               try {
@@ -131,16 +130,16 @@ jobs:
               } catch(e) { 0; }
             " 2>/dev/null || echo "0")
           fi
-          
+
           # Validate และ fallback
           if ! echo "$COVERAGE" | grep -q '^[0-9]*\.*[0-9]*$'; then
             COVERAGE="0"
           fi
-          
+
           if [ -z "$COVERAGE" ] || [ "$COVERAGE" = "" ]; then
             COVERAGE="0"
           fi
-          
+
           echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
           echo "Coverage: $COVERAGE%"
       ##################################################
@@ -152,13 +151,13 @@ jobs:
           echo "## 📊 Test Coverage Report" >> $GITHUB_STEP_SUMMARY
           COVERAGE="${{ steps.coverage.outputs.percentage }}"
           echo "- **Coverage:** ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
-          
+
           if [ -d "coverage" ]; then
             echo "- **Detailed Report:** Available in artifacts" >> $GITHUB_STEP_SUMMARY
           else
             echo "- **Detailed Report:** No coverage files generated" >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           if [ "$COVERAGE" = "0" ]; then
             echo "- **ℹ️ Info:** No unit tests found - consider adding tests for better code quality" >> $GITHUB_STEP_SUMMARY
           elif [ "$(awk "BEGIN {print ($COVERAGE >= 70) ? 1 : 0}")" = "1" ]; then
@@ -166,7 +165,7 @@ jobs:
           else
             echo "- **⚠️ Warning:** Coverage below 70% recommended threshold" >> $GITHUB_STEP_SUMMARY
           fi
-    
+
       - name: Upload Coverage Reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -182,7 +181,7 @@ jobs:
       - name: Create JS Bundles for Sharing
         run: |
           echo "📦 Creating JavaScript bundles for deployment..."
-          
+
           # Android bundle
           mkdir -p bundles/android
           npx react-native bundle \
@@ -192,7 +191,7 @@ jobs:
             --bundle-output bundles/android/index.android.bundle \
             --assets-dest bundles/android/assets/ \
             --minify true
-          
+
           # iOS bundle  
           mkdir -p bundles/ios
           npx react-native bundle \
@@ -202,7 +201,7 @@ jobs:
             --bundle-output bundles/ios/main.jsbundle \
             --assets-dest bundles/ios/assets/ \
             --minify true
-          
+
           echo "✅ Bundles created successfully"
 
       - name: Upload Android Bundle
@@ -226,7 +225,7 @@ jobs:
     needs: [setup-test-and-prepare]
     if: needs.setup-test-and-prepare.outputs.is_production == 'true'
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -237,9 +236,9 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          
+
           TAG_NAME="v${{ needs.setup-test-and-prepare.outputs.version }}"
-          
+
           # Check if tag already exists
           if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
             echo "⚠️ Tag $TAG_NAME already exists, skipping..."
@@ -277,10 +276,11 @@ jobs:
 
   finalize-production-release:
     if: needs.setup-test-and-prepare.outputs.is_production == 'true'
-    needs: [setup-test-and-prepare, deploy-android, deploy-ios, create-release-tag]
+    needs:
+      [setup-test-and-prepare, deploy-android, deploy-ios, create-release-tag]
     runs-on: ubuntu-latest
-    environment: production  # This triggers manual approval
-    
+    environment: production # This triggers manual approval
+
     steps:
       #Download, Changelog, Marketing
       - name: Create GitHub Release
@@ -292,7 +292,7 @@ jobs:
           release_name: 'Production Release v${{ needs.setup-test-and-prepare.outputs.version }}'
           body: |
             ## 🚀 Production Release v${{ needs.setup-test-and-prepare.outputs.version }}
-            
+
             ### 📋 Release Information
             - **Version:** v${{ needs.setup-test-and-prepare.outputs.version }}
             - **Version Code:** ${{ needs.setup-test-and-prepare.outputs.version_code }}
@@ -300,17 +300,17 @@ jobs:
             - **Deployed by:** ${{ github.actor }}
             - **Commit:** ${{ github.sha }}
             - **Test Coverage:** ${{ needs.setup-test-and-prepare.outputs.coverage }}%
-            
+
             ### ✅ Quality Checks Passed
             - Code linting and type checking
             - Unit and integration tests
             - Security audit
             - Bundle size analysis
-            
+
             ### 📱 Platform Deployments
             - **Android:** ${{ needs.deploy-android.result == 'success' && '✅ Deployed to Google Play' || '❌ Failed' }}
             - **iOS:** ${{ needs.deploy-ios.result == 'success' && '✅ Deployed to App Store' || '❌ Failed' }}
-            
+
             ### 🔗 Links
             - [Commit Details](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
             - [Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
@@ -329,7 +329,7 @@ jobs:
     needs: [setup-test-and-prepare, deploy-android, deploy-ios]
     if: always()
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Deployment Summary
         run: |
@@ -339,14 +339,14 @@ jobs:
           echo "- **Version Code:** ${{ needs.setup-test-and-prepare.outputs.version_code }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Test Coverage:** ${{ needs.setup-test-and-prepare.outputs.coverage }}%" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           echo "### 📊 Pipeline Results" >> $GITHUB_STEP_SUMMARY
           echo "- **Setup & Tests:** ${{ needs.setup-test-and-prepare.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Bundle Analysis:** ${{ needs.bundle-analysis.result == 'success' && '✅ Completed' || '⚠️ Partial' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Android Deploy:** ${{ needs.deploy-android.result == 'success' && '✅ Success' || needs.deploy-android.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **iOS Deploy:** ${{ needs.deploy-ios.result == 'success' && '✅ Success' || needs.deploy-ios.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           # Deployment track info
           BRANCH="${{ needs.setup-test-and-prepare.outputs.branch }}"
           case "$BRANCH" in
@@ -366,6 +366,6 @@ jobs:
               echo "- **iOS:** TestFlight (Internal)" >> $GITHUB_STEP_SUMMARY
               ;;
           esac
-          
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "*Deployment completed on $(date)*" >> $GITHUB_STEP_SUMMARY
