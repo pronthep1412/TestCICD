@@ -4,9 +4,14 @@ name: Continuous Deployment
 on:
   push:
     branches:
-      # - master
+      - master
       - develop
       - preprod
+
+permissions:
+  contents: write
+  pull-requests: read
+  actions: read
 
 env:
   NODE_VERSION: 22.11.0
@@ -48,7 +53,7 @@ jobs:
           BRANCH_NAME=${{ github.ref_name }}
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           RUN_NUMBER=${{ github.run_number }}
-          OFFSET_START=1000200 
+          OFFSET_START=1001000 
           # 🎯 UNIFIED VERSION STRATEGY: Same version code for both iOS & Android
           case "$BRANCH_NAME" in
             "master")
@@ -282,37 +287,71 @@ jobs:
     environment: production # This triggers manual approval
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          VERSION="${{ needs.setup-test-and-prepare.outputs.version }}"
+
+          # Generate changelog from commits
+          echo "## 🚀 React Native Production Release v$VERSION" > release_notes.md
+          echo "" >> release_notes.md
+          echo "### 📋 Release Information" >> release_notes.md
+          echo "- **Version:** v$VERSION" >> release_notes.md
+          echo "- **Version Code:** ${{ needs.setup-test-and-prepare.outputs.version_code }}" >> release_notes.md
+          echo "- **Branch:** ${{ needs.setup-test-and-prepare.outputs.branch }}" >> release_notes.md
+          echo "- **Deployed by:** ${{ github.actor }}" >> release_notes.md
+          echo "- **Commit:** ${{ github.sha }}" >> release_notes.md
+          echo "- **Test Coverage:** ${{ needs.setup-test-and-prepare.outputs.coverage }}%" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### ✅ Quality Checks Passed" >> release_notes.md
+          echo "- Code linting and type checking" >> release_notes.md
+          echo "- Unit and integration tests" >> release_notes.md
+          echo "- Security audit" >> release_notes.md
+          echo "- Bundle size analysis" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### 📱 Platform Deployments" >> release_notes.md
+
+          if [ "${{ needs.deploy-android.result }}" = "success" ]; then
+            echo "- **Android**: ✅ Google Play Store" >> release_notes.md
+          else
+            echo "- **Android**: ❌ Failed" >> release_notes.md
+          fi
+
+          if [ "${{ needs.deploy-ios.result }}" = "success" ]; then
+            echo "- **iOS**: ✅ App Store Connect (TestFlight)" >> release_notes.md
+          else
+            echo "- **iOS**: ❌ Failed" >> release_notes.md
+          fi
+
+          echo "" >> release_notes.md
+          echo "### 📝 Recent Changes" >> release_notes.md
+
+          # Get recent commits
+          git log --oneline --no-merges -10 --pretty="- %s" >> release_notes.md
+
+          echo "" >> release_notes.md
+          echo "### 🔗 Links" >> release_notes.md
+          echo "- [Commit Details](https://github.com/${{ github.repository }}/commit/${{ github.sha }})" >> release_notes.md
+          echo "- [Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "*Released on $(date)*" >> release_notes.md
+
       #Download, Changelog, Marketing
       - name: Create GitHub Release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: v${{ needs.setup-test-and-prepare.outputs.version }}
-          release_name: 'Production Release v${{ needs.setup-test-and-prepare.outputs.version }}'
-          body: |
-            ## 🚀 Production Release v${{ needs.setup-test-and-prepare.outputs.version }}
-
-            ### 📋 Release Information
-            - **Version:** v${{ needs.setup-test-and-prepare.outputs.version }}
-            - **Version Code:** ${{ needs.setup-test-and-prepare.outputs.version_code }}
-            - **Branch:** ${{ needs.setup-test-and-prepare.outputs.branch }}
-            - **Deployed by:** ${{ github.actor }}
-            - **Commit:** ${{ github.sha }}
-            - **Test Coverage:** ${{ needs.setup-test-and-prepare.outputs.coverage }}%
-
-            ### ✅ Quality Checks Passed
-            - Code linting and type checking
-            - Unit and integration tests
-            - Security audit
-            - Bundle size analysis
-
-            ### 📱 Platform Deployments
-            - **Android:** ${{ needs.deploy-android.result == 'success' && '✅ Deployed to Google Play' || '❌ Failed' }}
-            - **iOS:** ${{ needs.deploy-ios.result == 'success' && '✅ Deployed to App Store' || '❌ Failed' }}
-
-            ### 🔗 Links
-            - [Commit Details](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+          name: 'React Native Production Release v${{ needs.setup-test-and-prepare.outputs.version }}'
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
             - [Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
       #Monitoring, Debugging
       - name: Production Release Summary
